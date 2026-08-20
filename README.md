@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UniFlow
 
-## Getting Started
+MVP de um sistema pessoal de organizacao academica para acompanhar o semestre.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router + React + TypeScript
+- Supabase Auth e Postgres com Row Level Security
+- CSS global com componentes reutilizaveis leves
+- `lucide-react` para icones
+
+## Como executar
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Acesse `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Sem variaveis do Supabase, o app entra em modo demo e usa dados mockados em `localStorage`. Isso existe apenas para desenvolvimento visual. Com Supabase configurado, os dados passam a vir do banco.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variaveis de ambiente
 
-## Learn More
+Crie um arquivo `.env.local` baseado em `.env.example`:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Supabase
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Crie um projeto no Supabase.
+2. Copie `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` para `.env.local`.
+3. No SQL Editor, execute `supabase/schema.sql`.
+4. Em Authentication, habilite email/senha.
 
-## Deploy on Vercel
+Se voce ja executou o schema antigo do MVP, rode tambem:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+supabase/migrations/20260820_academic_structure.sql
+supabase/migrations/20260820_order_tasks_materials.sql
+supabase/migrations/20260820_task_progress.sql
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A migration `20260820_order_tasks_materials.sql` tambem cria o bucket privado `subject-materials` no Supabase Storage e as policies para arquivos por usuario.
+
+## Estrutura
+
+- `src/app`: rotas do App Router.
+- `src/components`: shell, providers, modais e componentes de UI.
+- `src/lib`: Supabase, repositorio, datas, labels e logica de prioridade.
+- `src/types`: tipos de dominio.
+- `supabase/schema.sql`: modelo inicial do banco e politicas RLS.
+- `supabase/migrations`: mudancas incrementais para bancos ja criados.
+
+## Funcionalidades do MVP
+
+- Autenticacao com Supabase Auth.
+- Dashboard inicial com Hoje, Proximos prazos e Situacao das materias.
+- CRUD de materias.
+- CRUD de demandas, filtros e concluir demanda.
+- CRUD de topicos por materia, com status e ordenacao simples.
+- Avaliacoes separadas de notas obtidas, com vinculo a topicos cobrados.
+- Ordenacao manual das materias na sidebar.
+- Materiais por materia, com links e arquivos via Supabase Storage.
+- Visao semanal simples.
+- Pagina individual de materia com progresso, proxima avaliacao, conteudos, demandas e materiais futuros.
+- Tela de notas com proximas avaliacoes, resultados e media parcial.
+
+## Proximos passos
+
+- Criar onboarding guiado para as 8 materias reais.
+- Melhorar validacoes e mensagens de erro.
+- Trocar o fallback demo por seed controlado em ambiente de desenvolvimento.
+- Evoluir a logica centralizada em `src/lib/priority.ts` para prioridade automatica.

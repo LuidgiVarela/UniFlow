@@ -1,69 +1,115 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import Link from "next/link";
+import { TaskProgress } from "@/components/task-progress";
+import { PageHeader, Panel } from "@/components/ui";
+import { useAppData } from "@/components/data-provider";
+import { assessmentDaysText } from "@/lib/academic";
+import { daysUntil, formatDate, toIsoDate } from "@/lib/date";
+import { demandTypeLabels } from "@/lib/labels";
+import { sortDemandsByPriorityAndDate } from "@/lib/priority";
 
 export default function Home() {
+  const { subjects, demands, assessments } = useAppData();
+  const today = toIsoDate(new Date());
+  const openDemands = demands.filter((demand) => demand.status !== "concluido");
+  const todayItems = openDemands.filter((demand) => demand.due_date === today);
+  const datedDemands = sortDemandsByPriorityAndDate(openDemands.filter((demand) => demand.due_date)).slice(0, 10);
+  const undatedDemands = sortDemandsByPriorityAndDate(openDemands.filter((demand) => !demand.due_date));
+  const upcomingAssessments = assessments
+    .filter((assessment) => assessment.status === "futura" && assessment.date)
+    .sort((a, b) => new Date(`${a.date}T12:00:00`).getTime() - new Date(`${b.date}T12:00:00`).getTime())
+    .slice(0, 5);
+
+  function subjectFor(id: string) {
+    return subjects.find((subject) => subject.id === id);
+  }
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <>
+      <PageHeader title="Visão geral" />
+
+      {todayItems.length ? (
+        <Panel className="plain-section">
+          <h2>Hoje</h2>
+          <div className="quiet-list">
+            {todayItems.map((item) => {
+              const subject = subjectFor(item.subject_id);
+              return (
+                <Link className="quiet-row task-summary-row" href={`/materias/${item.subject_id}`} key={item.id}>
+                  <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <small>{demandTypeLabels[item.type]}</small>
+                    <TaskProgress demand={item} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </Panel>
+      ) : null}
+
+      <Panel className="plain-section">
+        <h2>Próximos prazos</h2>
+        <div className="timeline-list">
+          {datedDemands.map((demand) => {
+            const subject = subjectFor(demand.subject_id);
+            const days = daysUntil(demand.due_date as string);
+            return (
+              <Link className="timeline-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
+                <time>{formatDate(demand.due_date)}</time>
+                <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
+                <div>
+                  <strong>{demand.title}</strong>
+                  <small>{demandTypeLabels[demand.type]}</small>
+                  <TaskProgress demand={demand} />
+                </div>
+                <small>{days === 0 ? "hoje" : days < 0 ? `${Math.abs(days)}d atrasado` : `${days}d`}</small>
+              </Link>
+            );
+          })}
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </Panel>
+
+      {undatedDemands.length ? (
+        <Panel className="plain-section">
+          <h2>Pendências sem prazo</h2>
+          <div className="quiet-list">
+            {undatedDemands.map((demand) => {
+              const subject = subjectFor(demand.subject_id);
+              return (
+                <Link className="quiet-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
+                  <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
+                  <div>
+                    <strong>{demand.title}</strong>
+                    <small>{demandTypeLabels[demand.type]}</small>
+                    <TaskProgress demand={demand} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </Panel>
+      ) : null}
+
+      <Panel className="plain-section">
+        <h2>Próximas avaliações</h2>
+        <div className="quiet-list">
+          {upcomingAssessments.map((assessment) => {
+            const subject = subjectFor(assessment.subject_id);
+            return (
+              <Link className="quiet-row" href={`/materias/${assessment.subject_id}`} key={assessment.id}>
+                <span className="subject-code" style={{ color: subject?.color }}>{subject?.code}</span>
+                <strong>{assessment.name}</strong>
+                <small>{formatDate(assessment.date)}</small>
+                <small>{assessmentDaysText(assessment)}</small>
+              </Link>
+            );
+          })}
+          {!upcomingAssessments.length ? <p className="muted compact-note">Nenhuma avaliação futura.</p> : null}
         </div>
-      </main>
-    </div>
+      </Panel>
+    </>
   );
 }

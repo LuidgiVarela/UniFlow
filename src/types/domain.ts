@@ -55,6 +55,7 @@ export type DemandQuestion = {
   demand_id: string;
   label: string;
   difficulty: DemandQuestionDifficulty;
+  important?: boolean;
   notes?: string | null;
   order_index: number;
   created_at: string;

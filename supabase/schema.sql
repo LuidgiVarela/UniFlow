@@ -53,10 +53,13 @@ create table if not exists public.demand_questions (
   demand_id uuid not null references public.demands(id) on delete cascade,
   label text not null,
   difficulty text not null default 'media' check (difficulty in ('facil', 'media', 'dificil')),
+  important boolean not null default false,
   notes text,
   order_index integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.demand_questions add column if not exists important boolean not null default false;
 
 create table if not exists public.demand_question_items (
   id uuid primary key default gen_random_uuid(),

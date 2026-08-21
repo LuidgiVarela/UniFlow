@@ -448,10 +448,12 @@ export default function SubjectDetailPage() {
         <Panel className="plain-section">
           <div className="section-tools">
             <h2>Materiais</h2>
-            <div className="section-actions">
-              <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
-              <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
-            </div>
+            {!activeFolderId ? (
+              <div className="section-actions">
+                <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
+                <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
+              </div>
+            ) : null}
           </div>
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
           <div className="material-browser">
@@ -512,12 +514,12 @@ export default function SubjectDetailPage() {
                     <small>{activeMaterials.length} materiais</small>
                   </div>
                   {activeFolder ? (
-                    <div className="row-actions">
-                      <button className="icon-button" onClick={() => openFolderModal(activeFolder)} title="Renomear pasta" type="button">
-                        <Edit size={15} />
+                    <div className="folder-detail-actions">
+                      <button className="ghost-action" onClick={() => openFolderModal(activeFolder)} type="button">
+                        <Edit size={15} />Renomear
                       </button>
-                      <button className="icon-button danger" onClick={() => deleteFolder(activeFolder.id, activeFolder.name)} title="Excluir pasta" type="button">
-                        <Trash2 size={15} />
+                      <button className="ghost-action danger" onClick={() => deleteFolder(activeFolder.id, activeFolder.name)} type="button">
+                        <Trash2 size={15} />Excluir pasta
                       </button>
                     </div>
                   ) : null}

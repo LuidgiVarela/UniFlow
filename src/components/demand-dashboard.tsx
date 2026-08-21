@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Star, Trash2 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import type { Demand, DemandQuestion, DemandQuestionDifficulty, DemandQuestionItem } from "@/types/domain";
@@ -65,6 +66,21 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     0,
   );
   const percent = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
+  const importantQuestions = questions.filter((question) => question.important).length;
+  const completedQuestions = questions.filter((question) => {
+    const items = itemsByQuestion[question.id] ?? [];
+    return items.length > 0 && items.every((item) => item.done);
+  }).length;
+  const difficultyStats = difficulties.map((difficulty) => {
+    const difficultyQuestions = questions.filter((question) => question.difficulty === difficulty.value);
+    const difficultyItems = difficultyQuestions.flatMap((question) => itemsByQuestion[question.id] ?? []);
+    const difficultyDone = difficultyItems.filter((item) => item.done).length;
+    return {
+      ...difficulty,
+      count: difficultyQuestions.length,
+      percent: difficultyItems.length ? Math.round((difficultyDone / difficultyItems.length) * 100) : 0,
+    };
+  });
 
   async function submitGenerator(event: React.FormEvent) {
     event.preventDefault();
@@ -110,6 +126,35 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         </div>
       </div>
 
+      <section className="task-stats-panel" aria-label="Estatísticas da atividade">
+        <div className="task-donut-card">
+          <div className="task-donut" style={{ "--progress": `${percent}%` } as CSSProperties}>
+            <span>{percent}%</span>
+          </div>
+          <div>
+            <strong>Progresso geral</strong>
+            <small>{completedQuestions} de {questions.length} questões completas</small>
+          </div>
+        </div>
+        <div className="task-stat-card">
+          <strong>{importantQuestions}</strong>
+          <small>questões importantes</small>
+        </div>
+        <div className="task-stat-card">
+          <strong>{Math.max(questions.length - completedQuestions, 0)}</strong>
+          <small>questões em aberto</small>
+        </div>
+        <div className="difficulty-chart">
+          {difficultyStats.map((difficulty) => (
+            <div className="difficulty-chart-row" key={difficulty.value}>
+              <span>{difficulty.label}</span>
+              <div className="difficulty-bar"><i style={{ width: `${difficulty.percent}%` }} /></div>
+              <strong>{difficulty.count}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <form className="task-generator" onSubmit={submitGenerator}>
         <label>Questões<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
         <label>Itens iniciais<input value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
@@ -124,11 +169,23 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
           const items = itemsByQuestion[question.id] ?? [];
           const done = items.filter((item) => item.done).length;
           const noteValue = noteDrafts[question.id] ?? question.notes ?? "";
+          const questionPercent = items.length ? Math.round((done / items.length) * 100) : 0;
           return (
-            <article className="question-card" key={question.id}>
+            <article className={`question-card ${question.important ? "important" : ""}`} key={question.id}>
               <div className="question-card-header">
                 <div>
-                  <strong>{displayQuestionLabel(question.label)}</strong>
+                  <div className="question-title-line">
+                    <strong>{displayQuestionLabel(question.label)}</strong>
+                    <button
+                      aria-label={question.important ? "Remover marca de questão importante" : "Marcar como questão importante"}
+                      className={`question-star-button ${question.important ? "active" : ""}`}
+                      onClick={() => updateQuestion(question, { important: !question.important })}
+                      title={question.important ? "Questão importante" : "Marcar como importante"}
+                      type="button"
+                    >
+                      <Star size={15} />
+                    </button>
+                  </div>
                   <small>{progressText(done, items.length)}</small>
                 </div>
                 <select
@@ -139,6 +196,9 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
                     <option key={difficulty.value} value={difficulty.value}>{difficulty.label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="question-mini-chart" aria-label={`${questionPercent}% concluído`}>
+                <span style={{ width: `${questionPercent}%` }} />
               </div>
               <div className="question-items">
                 {items.map((item) => (

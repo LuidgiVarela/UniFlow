@@ -3,7 +3,7 @@
 import { Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
 import { useAppData } from "@/components/data-provider";
@@ -50,6 +50,7 @@ export default function SubjectDetailPage() {
     removeDemand,
     removeAssessment,
     removeMaterial,
+    upsertMaterial,
     upsertMaterialFolder,
   } = useAppData();
   const [tab, setTab] = useState<SubjectTab>("overview");
@@ -60,6 +61,9 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
+  const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
+  const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -81,6 +85,31 @@ export default function SubjectDetailPage() {
         .sort((a, b) => new Date(`${a.date ?? "2999-12-31"}T12:00:00`).getTime() - new Date(`${b.date ?? "2999-12-31"}T12:00:00`).getTime()),
     [assessments, params.id],
   );
+
+  useEffect(() => {
+    if (tab !== "materials") return;
+    const pageMaterials = materials.filter((material) => material.subject_id === params.id);
+    let active = true;
+
+    async function loadMaterialUrls() {
+      const entries = await Promise.all(
+        pageMaterials.map(async (material) => {
+          try {
+            return [material.id, await getMaterialUrl(material)] as const;
+          } catch {
+            return [material.id, ""] as const;
+          }
+        }),
+      );
+      if (!active) return;
+      setMaterialUrls(Object.fromEntries(entries));
+    }
+
+    void loadMaterialUrls();
+    return () => {
+      active = false;
+    };
+  }, [getMaterialUrl, materials, params.id, tab]);
 
   if (!subject) {
     return (
@@ -133,23 +162,18 @@ export default function SubjectDetailPage() {
     );
   }
 
-  async function openMaterial(materialId: string) {
+  async function moveMaterialToFolder(materialId: string, folderId: string | null) {
     const material = subjectMaterials.find((item) => item.id === materialId);
     if (!material) return;
+    if ((material.folder_id ?? null) === folderId) return;
     setMaterialError(null);
-    const target = window.open("about:blank", "_blank");
-    if (!target) {
-      setMaterialError("O navegador bloqueou a nova aba. Permita pop-ups para abrir este material.");
-      return;
-    }
-    target.opener = null;
     try {
-      const url = await getMaterialUrl(material);
-      if (!url || url === "#") throw new Error("Nao foi possivel gerar o link deste material.");
-      target.location.assign(url);
+      await upsertMaterial({ ...material, folder_id: folderId });
     } catch (error) {
-      target.close();
-      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel abrir o material.");
+      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel mover o material.");
+    } finally {
+      setDraggedMaterialId(null);
+      setDropTargetId(null);
     }
   }
 
@@ -176,12 +200,28 @@ export default function SubjectDetailPage() {
   }
 
   function renderMaterial(material: Material) {
+    const href = materialUrls[material.id] || undefined;
     return (
-      <article className="simple-row material-row" key={material.id}>
+      <article
+        className={`simple-row material-row ${draggedMaterialId === material.id ? "dragging" : ""}`}
+        draggable
+        key={material.id}
+        onDragEnd={() => setDraggedMaterialId(null)}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", material.id);
+          setDraggedMaterialId(material.id);
+          setMaterialError(null);
+        }}
+      >
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
         <strong>{material.name}</strong>
         <div className="row-actions">
-          <button className="icon-button" onClick={() => openMaterial(material.id)} title="Abrir" type="button"><ExternalLink size={15} /></button>
+          {href ? (
+            <a className="icon-button" href={href} rel="noreferrer" target="_blank" title="Abrir"><ExternalLink size={15} /></a>
+          ) : (
+            <button className="icon-button" disabled title="Preparando link" type="button"><ExternalLink size={15} /></button>
+          )}
           <button className="icon-button danger" onClick={() => removeMaterial(material)} title="Excluir" type="button"><Trash2 size={15} /></button>
         </div>
       </article>
@@ -337,7 +377,20 @@ export default function SubjectDetailPage() {
             {subjectFolders.map((folder) => {
               const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
               return (
-                <section className="material-folder" key={folder.id}>
+                <section
+                  className={`material-folder ${dropTargetId === folder.id ? "drop-active" : ""}`}
+                  key={folder.id}
+                  onDragEnter={() => setDropTargetId(folder.id)}
+                  onDragLeave={() => setDropTargetId(null)}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), folder.id);
+                  }}
+                >
                   <div className="material-folder-header">
                     <Folder size={18} />
                     <strong>{folder.name}</strong>
@@ -350,8 +403,20 @@ export default function SubjectDetailPage() {
                 </section>
               );
             })}
-            {looseMaterials.length ? (
-              <section className="material-folder">
+            {subjectFolders.length || looseMaterials.length ? (
+              <section
+                className={`material-folder ${dropTargetId === "loose" ? "drop-active" : ""}`}
+                onDragEnter={() => setDropTargetId("loose")}
+                onDragLeave={() => setDropTargetId(null)}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), null);
+                }}
+              >
                 <div className="material-folder-header">
                   <Folder size={18} />
                   <strong>Sem pasta</strong>
@@ -359,6 +424,7 @@ export default function SubjectDetailPage() {
                 </div>
                 <div className="quiet-list">
                   {looseMaterials.map((material) => renderMaterial(material))}
+                  {!looseMaterials.length ? <p className="muted compact-note">Nenhum material sem pasta.</p> : null}
                 </div>
               </section>
             ) : null}

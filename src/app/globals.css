@@ -802,6 +802,17 @@ label {
 
 .material-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
+  cursor: grab;
+  transition: border-color 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+}
+
+.material-row:active {
+  cursor: grabbing;
+}
+
+.material-row.dragging {
+  opacity: 0.52;
+  transform: scale(0.99);
 }
 
 .material-browser {
@@ -813,6 +824,12 @@ label {
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   padding: 12px;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.material-folder.drop-active {
+  border-color: var(--accent);
+  background: rgba(47, 125, 209, 0.08);
 }
 
 .material-folder-header {

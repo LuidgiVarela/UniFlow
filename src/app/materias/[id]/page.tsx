@@ -6,10 +6,11 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
+import { DemandDashboardModal } from "@/components/demand-dashboard-modal";
 import { useAppData } from "@/components/data-provider";
 import { MaterialModal } from "@/components/material-modal";
 import { SubjectModal } from "@/components/subject-modal";
-import { TaskProgress } from "@/components/task-progress";
+import { TaskProgress, type TaskProgressValue } from "@/components/task-progress";
 import { TopicManager } from "@/components/topic-manager";
 import { EmptyState, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText, nextAssessment, topicProgress } from "@/lib/academic";
@@ -40,6 +41,8 @@ export default function SubjectDetailPage() {
   const {
     subjects,
     demands,
+    demandQuestionItems,
+    demandQuestions,
     assessments,
     assessmentTopics,
     materialFolders,
@@ -58,6 +61,7 @@ export default function SubjectDetailPage() {
   const [editSubjectOpen, setEditSubjectOpen] = useState(false);
   const [demandOpen, setDemandOpen] = useState(false);
   const [editingDemand, setEditingDemand] = useState<Demand | null>(null);
+  const [dashboardDemand, setDashboardDemand] = useState<Demand | null>(null);
   const [assessmentOpen, setAssessmentOpen] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
@@ -168,6 +172,22 @@ export default function SubjectDetailPage() {
         </div>
       </article>
     );
+  }
+
+  function detailedDemandProgress(demand: Demand): TaskProgressValue | null {
+    const questionIds = demandQuestions
+      .filter((question) => question.demand_id === demand.id)
+      .map((question) => question.id);
+    if (!questionIds.length) return null;
+    const items = demandQuestionItems.filter((item) => questionIds.includes(item.question_id));
+    if (!items.length) return null;
+    const completed = items.filter((item) => item.done).length;
+    return {
+      total: items.length,
+      completed,
+      percent: Math.min(100, Math.round((completed / items.length) * 100)),
+      label: "itens",
+    };
   }
 
   async function moveMaterialToFolder(materialId: string, folderId: string | null) {
@@ -309,7 +329,7 @@ export default function SubjectDetailPage() {
                 <div className="line-block">
                   <strong>{nextTask.title}</strong>
                   <small>{[nextTask.due_date ? formatDate(nextTask.due_date) : null, demandTypeLabels[nextTask.type]].filter(Boolean).join(" - ")}</small>
-                  <TaskProgress demand={nextTask} />
+                  <TaskProgress demand={nextTask} progress={detailedDemandProgress(nextTask)} />
                 </div>
               ) : <p className="muted compact-note">Nenhuma tarefa pendente.</p>}
             </section>
@@ -352,9 +372,11 @@ export default function SubjectDetailPage() {
                   {demand.status === "concluido" ? "✓" : ""}
                 </button>
                 <div>
-                  <strong>{demand.title}</strong>
+                  <button className="task-title-button" onClick={() => setDashboardDemand(demand)} type="button">
+                    {demand.title}
+                  </button>
                   <small>{[demand.due_date ? formatDate(demand.due_date) : null, demandTypeLabels[demand.type], demandStatusLabels[demand.status]].filter(Boolean).join(" - ")}</small>
-                  <TaskProgress demand={demand} />
+                  <TaskProgress demand={demand} progress={detailedDemandProgress(demand)} />
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
                 <div className="row-actions">
@@ -512,6 +534,7 @@ export default function SubjectDetailPage() {
       <SubjectModal open={editSubjectOpen} subject={subject} onClose={() => setEditSubjectOpen(false)} />
       <DemandModal open={demandOpen} subjectId={subject.id} onClose={() => setDemandOpen(false)} />
       <DemandModal open={Boolean(editingDemand)} demand={editingDemand} onClose={() => setEditingDemand(null)} />
+      <DemandDashboardModal demand={dashboardDemand} onClose={() => setDashboardDemand(null)} />
       <AssessmentModal open={assessmentOpen} subjectId={subject.id} onClose={() => setAssessmentOpen(false)} />
       <AssessmentModal open={Boolean(editingAssessment)} assessment={editingAssessment} onClose={() => setEditingAssessment(null)} />
       <MaterialModal folders={subjectFolders} open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />

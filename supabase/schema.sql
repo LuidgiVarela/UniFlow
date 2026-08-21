@@ -47,6 +47,27 @@ create table if not exists public.demands (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.demand_questions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  demand_id uuid not null references public.demands(id) on delete cascade,
+  label text not null,
+  difficulty text not null default 'media' check (difficulty in ('facil', 'media', 'dificil')),
+  notes text,
+  order_index integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.demand_question_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  question_id uuid not null references public.demand_questions(id) on delete cascade,
+  label text not null,
+  done boolean not null default false,
+  order_index integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.topics (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -120,6 +141,8 @@ end $$;
 
 alter table public.subjects enable row level security;
 alter table public.demands enable row level security;
+alter table public.demand_questions enable row level security;
+alter table public.demand_question_items enable row level security;
 alter table public.topics enable row level security;
 alter table public.assessments enable row level security;
 alter table public.assessment_topics enable row level security;
@@ -141,6 +164,38 @@ create policy "Users can update own demands" on public.demands for update using 
   and exists (select 1 from public.subjects where subjects.id = demands.subject_id and subjects.user_id = auth.uid())
 );
 create policy "Users can delete own demands" on public.demands for delete using (auth.uid() = user_id);
+
+create policy "Users can read own demand questions" on public.demand_questions for select using (auth.uid() = user_id);
+create policy "Users can insert own demand questions" on public.demand_questions for insert with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.demands where demands.id = demand_questions.demand_id and demands.user_id = auth.uid())
+);
+create policy "Users can update own demand questions" on public.demand_questions for update using (auth.uid() = user_id) with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.demands where demands.id = demand_questions.demand_id and demands.user_id = auth.uid())
+);
+create policy "Users can delete own demand questions" on public.demand_questions for delete using (auth.uid() = user_id);
+
+create policy "Users can read own demand question items" on public.demand_question_items for select using (auth.uid() = user_id);
+create policy "Users can insert own demand question items" on public.demand_question_items for insert with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.demand_questions
+    where demand_questions.id = demand_question_items.question_id
+      and demand_questions.user_id = auth.uid()
+  )
+);
+create policy "Users can update own demand question items" on public.demand_question_items for update using (auth.uid() = user_id) with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.demand_questions
+    where demand_questions.id = demand_question_items.question_id
+      and demand_questions.user_id = auth.uid()
+  )
+);
+create policy "Users can delete own demand question items" on public.demand_question_items for delete using (auth.uid() = user_id);
 
 create policy "Users can read own topics" on public.topics for select using (auth.uid() = user_id);
 create policy "Users can insert own topics" on public.topics for insert with check (
@@ -221,6 +276,8 @@ create policy "Users can delete own subject material files"
 create index if not exists subjects_user_id_idx on public.subjects(user_id);
 create index if not exists subjects_user_id_sort_order_idx on public.subjects(user_id, sort_order);
 create index if not exists demands_user_id_due_date_idx on public.demands(user_id, due_date);
+create index if not exists demand_questions_demand_id_idx on public.demand_questions(demand_id);
+create index if not exists demand_question_items_question_id_idx on public.demand_question_items(question_id);
 create index if not exists topics_subject_id_idx on public.topics(subject_id);
 create index if not exists assessments_subject_id_idx on public.assessments(subject_id);
 create index if not exists assessments_user_id_date_idx on public.assessments(user_id, date);

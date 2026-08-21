@@ -8,18 +8,31 @@ import {
   deleteMaterial,
   deleteSubject,
   deleteTopic,
+  generateDemandQuestionSet,
   loadAppData,
   materialPublicUrl,
   reorderSubjects as persistSubjectOrder,
   saveAssessment,
   saveDemand,
+  saveDemandQuestion,
+  saveDemandQuestionItem,
   saveMaterial,
   saveMaterialFolder,
   saveSubject,
   saveTopic,
   uploadMaterialFile,
 } from "@/lib/repositories/uniflow-repository";
-import type { AppData, Assessment, Demand, Material, MaterialFolder, Subject, Topic } from "@/types/domain";
+import type {
+  AppData,
+  Assessment,
+  Demand,
+  DemandQuestion,
+  DemandQuestionItem,
+  Material,
+  MaterialFolder,
+  Subject,
+  Topic,
+} from "@/types/domain";
 
 type DataContextValue = AppData & {
   loading: boolean;
@@ -30,6 +43,9 @@ type DataContextValue = AppData & {
   upsertDemand: (demand: Demand) => Promise<void>;
   removeDemand: (id: string) => Promise<void>;
   completeDemand: (demand: Demand) => Promise<void>;
+  upsertDemandQuestion: (question: DemandQuestion) => Promise<void>;
+  upsertDemandQuestionItem: (item: DemandQuestionItem) => Promise<void>;
+  generateDemandQuestions: (demandId: string, questionCount: number, itemLabels: string[]) => Promise<void>;
   upsertTopic: (topic: Topic) => Promise<void>;
   removeTopic: (id: string) => Promise<void>;
   upsertAssessment: (assessment: Assessment, topicIds?: string[]) => Promise<void>;
@@ -46,6 +62,8 @@ const DataContext = createContext<DataContextValue | null>(null);
 const emptyData: AppData = {
   subjects: [],
   demands: [],
+  demandQuestions: [],
+  demandQuestionItems: [],
   topics: [],
   assessments: [],
   assessmentTopics: [],
@@ -136,6 +154,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }));
           throw error;
         }
+      },
+      async upsertDemandQuestion(question) {
+        const previousQuestions = dataRef.current.demandQuestions;
+        updateData((current) => {
+          const exists = current.demandQuestions.some((item) => item.id === question.id);
+          return {
+            ...current,
+            demandQuestions: exists
+              ? current.demandQuestions.map((item) => (item.id === question.id ? question : item))
+              : [...current.demandQuestions, question],
+          };
+        });
+        try {
+          await enqueueMutation(`demand-question:${question.id}`, () => saveDemandQuestion(question).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, demandQuestions: previousQuestions }));
+          throw error;
+        }
+      },
+      async upsertDemandQuestionItem(item) {
+        const previousItems = dataRef.current.demandQuestionItems;
+        updateData((current) => {
+          const exists = current.demandQuestionItems.some((currentItem) => currentItem.id === item.id);
+          return {
+            ...current,
+            demandQuestionItems: exists
+              ? current.demandQuestionItems.map((currentItem) => (currentItem.id === item.id ? item : currentItem))
+              : [...current.demandQuestionItems, item],
+          };
+        });
+        try {
+          await enqueueMutation(`demand-question-item:${item.id}`, () => saveDemandQuestionItem(item).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
+          throw error;
+        }
+      },
+      async generateDemandQuestions(demandId, questionCount, itemLabels) {
+        await generateDemandQuestionSet(demandId, questionCount, itemLabels);
+        await refresh();
       },
       async upsertTopic(topic) {
         const previousTopics = dataRef.current.topics;

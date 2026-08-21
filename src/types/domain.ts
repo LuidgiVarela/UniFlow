@@ -9,6 +9,7 @@ export type DemandType =
   | "outro";
 export type DemandPriority = "baixa" | "media" | "alta" | "urgente";
 export type DemandStatus = "pendente" | "em_andamento" | "concluido";
+export type DemandQuestionDifficulty = "facil" | "media" | "dificil";
 export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
@@ -45,6 +46,27 @@ export type Demand = {
   status: DemandStatus;
   total_items?: number | null;
   completed_items?: number | null;
+  created_at: string;
+};
+
+export type DemandQuestion = {
+  id: string;
+  user_id?: string;
+  demand_id: string;
+  label: string;
+  difficulty: DemandQuestionDifficulty;
+  notes?: string | null;
+  order_index: number;
+  created_at: string;
+};
+
+export type DemandQuestionItem = {
+  id: string;
+  user_id?: string;
+  question_id: string;
+  label: string;
+  done: boolean;
+  order_index: number;
   created_at: string;
 };
 
@@ -106,6 +128,8 @@ export type Material = {
 export type AppData = {
   subjects: Subject[];
   demands: Demand[];
+  demandQuestions: DemandQuestion[];
+  demandQuestionItems: DemandQuestionItem[];
   topics: Topic[];
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];

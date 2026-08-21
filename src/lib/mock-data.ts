@@ -69,6 +69,8 @@ export const mockData: AppData = {
       created_at: new Date().toISOString(),
     },
   ],
+  demandQuestions: [],
+  demandQuestionItems: [],
   topics: [
     { id: "top-lp-1", subject_id: "sub-lp", title: "Paradigmas de programacao", status: "concluido", order_index: 1 },
     { id: "top-lp-2", subject_id: "sub-lp", title: "Funcoes", status: "concluido", order_index: 2 },

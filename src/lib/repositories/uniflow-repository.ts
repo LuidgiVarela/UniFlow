@@ -1,6 +1,17 @@
 import { mockData } from "@/lib/mock-data";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
-import type { AppData, Assessment, AssessmentTopic, Demand, Material, MaterialFolder, Subject, Topic } from "@/types/domain";
+import type {
+  AppData,
+  Assessment,
+  AssessmentTopic,
+  Demand,
+  DemandQuestion,
+  DemandQuestionItem,
+  Material,
+  MaterialFolder,
+  Subject,
+  Topic,
+} from "@/types/domain";
 
 const DEMO_KEY = "uniflow:demo-data";
 
@@ -15,6 +26,8 @@ function readDemoData(): AppData {
   const data: AppData = {
     subjects: parsed.subjects ?? [],
     demands: parsed.demands ?? [],
+    demandQuestions: parsed.demandQuestions ?? [],
+    demandQuestionItems: parsed.demandQuestionItems ?? [],
     topics: parsed.topics ?? [],
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
@@ -39,9 +52,21 @@ async function requireUserId() {
 export async function loadAppData(): Promise<AppData> {
   if (!hasSupabaseEnv || !supabase) return readDemoData();
 
-  const [subjects, demands, topics, assessments, assessmentTopics, materials, materialFolders] = await Promise.all([
+  const [
+    subjects,
+    demands,
+    demandQuestions,
+    demandQuestionItems,
+    topics,
+    assessments,
+    assessmentTopics,
+    materials,
+    materialFolders,
+  ] = await Promise.all([
     supabase.from("subjects").select("*").order("sort_order", { nullsFirst: false }).order("created_at"),
     supabase.from("demands").select("*").order("due_date", { nullsFirst: false }).order("created_at"),
+    supabase.from("demand_questions").select("*").order("order_index"),
+    supabase.from("demand_question_items").select("*").order("order_index"),
     supabase.from("topics").select("*").order("order_index"),
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
@@ -56,6 +81,8 @@ export async function loadAppData(): Promise<AppData> {
   return {
     subjects: subjects.data ?? [],
     demands: demands.data ?? [],
+    demandQuestions: demandQuestions.error ? [] : demandQuestions.data ?? [],
+    demandQuestionItems: demandQuestionItems.error ? [] : demandQuestionItems.data ?? [],
     topics: topics.data ?? [],
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
@@ -110,8 +137,12 @@ export async function reorderSubjects(ids: string[]) {
 export async function deleteSubject(id: string) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
+    const demandIds = data.demands.filter((item) => item.subject_id === id).map((item) => item.id);
     data.subjects = data.subjects.filter((item) => item.id !== id);
     data.demands = data.demands.filter((item) => item.subject_id !== id);
+    data.demandQuestions = data.demandQuestions.filter((item) => !demandIds.includes(item.demand_id));
+    const questionIds = data.demandQuestions.map((item) => item.id);
+    data.demandQuestionItems = data.demandQuestionItems.filter((item) => questionIds.includes(item.question_id));
     data.topics = data.topics.filter((item) => item.subject_id !== id);
     data.assessments = data.assessments.filter((item) => item.subject_id !== id);
     data.assessmentTopics = data.assessmentTopics.filter((item) =>
@@ -151,11 +182,128 @@ export async function deleteDemand(id: string) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     data.demands = data.demands.filter((item) => item.id !== id);
+    data.demandQuestions = data.demandQuestions.filter((item) => item.demand_id !== id);
+    const questionIds = data.demandQuestions.map((item) => item.id);
+    data.demandQuestionItems = data.demandQuestionItems.filter((item) => questionIds.includes(item.question_id));
     writeDemoData(data);
     return;
   }
   const { error } = await supabase.from("demands").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function saveDemandQuestion(question: DemandQuestion) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.demandQuestions.some((item) => item.id === question.id);
+    data.demandQuestions = exists
+      ? data.demandQuestions.map((item) => (item.id === question.id ? question : item))
+      : [...data.demandQuestions, question];
+    writeDemoData(data);
+    return question;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("demand_questions")
+    .upsert({ ...question, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as DemandQuestion;
+}
+
+export async function saveDemandQuestionItem(item: DemandQuestionItem) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.demandQuestionItems.some((current) => current.id === item.id);
+    data.demandQuestionItems = exists
+      ? data.demandQuestionItems.map((current) => (current.id === item.id ? item : current))
+      : [...data.demandQuestionItems, item];
+    writeDemoData(data);
+    return item;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("demand_question_items")
+    .upsert({ ...item, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as DemandQuestionItem;
+}
+
+export async function generateDemandQuestionSet(demandId: string, questionCount: number, itemLabels: string[]) {
+  const cleanCount = Math.max(0, Math.floor(questionCount));
+  const cleanLabels = itemLabels.map((label) => label.trim()).filter(Boolean);
+  if (!cleanCount || !cleanLabels.length) return;
+
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const existingCount = data.demandQuestions.filter((question) => question.demand_id === demandId).length;
+    const questions: DemandQuestion[] = Array.from({ length: cleanCount }, (_, index) => ({
+      id: crypto.randomUUID(),
+      demand_id: demandId,
+      label: `Questao ${existingCount + index + 1}`,
+      difficulty: "media",
+      notes: "",
+      order_index: existingCount + index + 1,
+      created_at: new Date().toISOString(),
+    }));
+    const items: DemandQuestionItem[] = questions.flatMap((question) =>
+      cleanLabels.map((label, index) => ({
+        id: crypto.randomUUID(),
+        question_id: question.id,
+        label,
+        done: false,
+        order_index: index + 1,
+        created_at: new Date().toISOString(),
+      })),
+    );
+    data.demandQuestions = [...data.demandQuestions, ...questions];
+    data.demandQuestionItems = [...data.demandQuestionItems, ...items];
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const { count, error: countError } = await supabase
+    .from("demand_questions")
+    .select("id", { count: "exact", head: true })
+    .eq("demand_id", demandId)
+    .eq("user_id", user_id);
+  if (countError) throw countError;
+
+  const existingCount = count ?? 0;
+  const questions = Array.from({ length: cleanCount }, (_, index) => ({
+    id: crypto.randomUUID(),
+    user_id,
+    demand_id: demandId,
+    label: `Questao ${existingCount + index + 1}`,
+    difficulty: "media",
+    notes: "",
+    order_index: existingCount + index + 1,
+    created_at: new Date().toISOString(),
+  }));
+  const insertedQuestions = await supabase.from("demand_questions").insert(questions).select();
+  if (insertedQuestions.error) throw insertedQuestions.error;
+
+  const items = (insertedQuestions.data ?? []).flatMap((question) =>
+    cleanLabels.map((label, index) => ({
+      id: crypto.randomUUID(),
+      user_id,
+      question_id: question.id,
+      label,
+      done: false,
+      order_index: index + 1,
+      created_at: new Date().toISOString(),
+    })),
+  );
+  if (items.length) {
+    const insertedItems = await supabase.from("demand_question_items").insert(items);
+    if (insertedItems.error) throw insertedItems.error;
+  }
 }
 
 export async function saveTopic(topic: Topic) {

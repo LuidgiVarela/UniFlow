@@ -1,6 +1,13 @@
 import type { Demand } from "@/types/domain";
 
-export function getTaskProgress(demand: Demand) {
+export type TaskProgressValue = {
+  total: number;
+  completed: number;
+  percent: number;
+  label?: string;
+};
+
+export function getTaskProgress(demand: Demand): TaskProgressValue | null {
   const total = demand.total_items ?? null;
   const completed = demand.completed_items ?? null;
   if (total === null || completed === null || total <= 0) return null;
@@ -8,11 +15,18 @@ export function getTaskProgress(demand: Demand) {
     total,
     completed,
     percent: Math.min(100, Math.round((completed / total) * 100)),
+    label: "questoes",
   };
 }
 
-export function TaskProgress({ demand }: { demand: Demand }) {
-  const progress = getTaskProgress(demand);
+export function TaskProgress({
+  demand,
+  progress: progressOverride,
+}: {
+  demand: Demand;
+  progress?: TaskProgressValue | null;
+}) {
+  const progress = progressOverride ?? getTaskProgress(demand);
   if (!progress) return null;
 
   return (
@@ -22,7 +36,7 @@ export function TaskProgress({ demand }: { demand: Demand }) {
       </div>
       <small>{progress.percent}%</small>
       <small>
-        {progress.completed} de {progress.total} questões
+        {progress.completed} de {progress.total} {progress.label ?? "itens"}
       </small>
     </div>
   );

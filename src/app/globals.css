@@ -938,22 +938,24 @@ label {
 
 .question-dashboard-list {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(390px, 100%), 1fr));
+  gap: 10px;
+  align-items: start;
 }
 
 .question-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
 }
 
 .question-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(74px, 0.35fr) minmax(150px, 1fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .question-card-header div {
@@ -966,7 +968,7 @@ label {
 }
 
 .question-card-header select {
-  min-width: 112px;
+  min-width: 0;
 }
 
 .question-items {
@@ -1042,6 +1044,10 @@ label {
 .question-note {
   display: grid;
   gap: 6px;
+}
+
+.question-note textarea {
+  min-height: 72px;
 }
 
 .material-row {
@@ -1307,10 +1313,15 @@ label {
   .demand-row,
   .assessment-row,
   .topic-row,
+  .question-card-header,
   .simple-row,
   .material-row,
   .quiet-row,
   .timeline-row {
+    grid-template-columns: 1fr;
+  }
+
+  .question-dashboard-list {
     grid-template-columns: 1fr;
   }
 }

@@ -3,6 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { CloseTaskPageButton } from "@/components/close-task-page-button";
 import { DemandDashboard } from "@/components/demand-dashboard";
 import { useAppData } from "@/components/data-provider";
 import { Panel } from "@/components/ui";
@@ -29,9 +30,7 @@ export default function TaskDashboardPage() {
           {subject ? <p className="subject-kicker" style={{ color: subject.color }}>{subject.code}</p> : null}
           <h1>{demand.title}</h1>
         </div>
-        <Link className="ghost-action" href={subject ? `/materias/${subject.id}` : "/"}>
-          <ArrowLeft size={16} />Voltar
-        </Link>
+        <CloseTaskPageButton fallbackHref={subject ? `/materias/${subject.id}` : "/"} />
       </header>
       <DemandDashboard demand={demand} />
     </>

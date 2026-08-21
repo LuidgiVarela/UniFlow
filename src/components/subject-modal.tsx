@@ -4,6 +4,14 @@ import { useEffect, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import type { Subject } from "@/types/domain";
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Nao foi possivel salvar a materia.";
+}
+
 export function SubjectModal({
   open,
   onClose,
@@ -56,7 +64,7 @@ export function SubjectModal({
       });
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Nao foi possivel salvar a materia.");
+      setError(errorMessage(error));
     } finally {
       setSaving(false);
     }

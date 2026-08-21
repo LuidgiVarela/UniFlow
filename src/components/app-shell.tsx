@@ -22,10 +22,11 @@ import {
   Menu,
   Plus,
   Settings,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/data-provider";
@@ -36,10 +37,12 @@ function SortableSubjectLink({
   subject,
   active,
   onNavigate,
+  onRemove,
 }: {
   subject: Subject;
   active: boolean;
   onNavigate: () => void;
+  onRemove: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: subject.id });
   const style = {
@@ -48,29 +51,43 @@ function SortableSubjectLink({
   };
 
   return (
-    <Link
-      className={`subject-nav-item ${active ? "active" : ""} ${isDragging ? "dragging" : ""}`}
-      href={`/materias/${subject.id}`}
-      onClick={onNavigate}
+    <div
+      className={`subject-nav-row ${active ? "active" : ""} ${isDragging ? "dragging" : ""}`}
       ref={setNodeRef}
       style={style}
-      title={subject.name}
       {...attributes}
       {...listeners}
     >
-      <span className="color-dot" style={{ background: subject.color }} />
-      <span>{subject.code}</span>
-    </Link>
+      <Link
+        className="subject-nav-item"
+        href={`/materias/${subject.id}`}
+        onClick={onNavigate}
+        title={subject.name}
+      >
+        <span className="color-dot" style={{ background: subject.color }} />
+        <span>{subject.code}</span>
+      </Link>
+      <button
+        className="subject-remove-button"
+        onClick={onRemove}
+        onPointerDown={(event) => event.stopPropagation()}
+        title="Remover materia"
+        type="button"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { demoMode, signOut, user } = useAuth();
-  const { subjects, reorderSubjects } = useAppData();
+  const { removeSubject, subjects, reorderSubjects } = useAppData();
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -85,6 +102,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (oldIndex < 0 || newIndex < 0) return;
     const next = arrayMove(sortedSubjects, oldIndex, newIndex).map((subject) => subject.id);
     await reorderSubjects(next);
+  }
+
+  async function handleRemoveSubject(subject: Subject) {
+    const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a materia e seus dados vinculados.`);
+    if (!ok) return;
+    await removeSubject(subject.id);
+    if (pathname === `/materias/${subject.id}`) router.push("/");
   }
 
   return (
@@ -109,6 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     active={pathname === `/materias/${subject.id}`}
                     key={subject.id}
                     onNavigate={() => setMenuOpen(false)}
+                    onRemove={() => handleRemoveSubject(subject)}
                     subject={subject}
                   />
                 ))}

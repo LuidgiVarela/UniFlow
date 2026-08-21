@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   deleteAssessment,
   deleteDemand,
+  deleteMaterialFolder,
   deleteMaterial,
   deleteSubject,
   deleteTopic,
@@ -35,6 +36,7 @@ type DataContextValue = AppData & {
   removeAssessment: (id: string) => Promise<void>;
   upsertMaterial: (material: Material) => Promise<void>;
   upsertMaterialFolder: (folder: MaterialFolder) => Promise<void>;
+  removeMaterialFolder: (id: string) => Promise<void>;
   uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
   getMaterialUrl: (material: Material) => Promise<string>;
@@ -132,6 +134,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async upsertMaterialFolder(folder) {
         await saveMaterialFolder(folder);
+        await refresh();
+      },
+      async removeMaterialFolder(id) {
+        await deleteMaterialFolder(id);
         await refresh();
       },
       async uploadMaterialFile(subjectId, file, name, folderId) {

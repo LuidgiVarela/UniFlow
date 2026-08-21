@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -50,6 +50,7 @@ export default function SubjectDetailPage() {
     removeDemand,
     removeAssessment,
     removeMaterial,
+    removeMaterialFolder,
     upsertMaterial,
     upsertMaterialFolder,
   } = useAppData();
@@ -64,6 +65,7 @@ export default function SubjectDetailPage() {
   const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -132,6 +134,13 @@ export default function SubjectDetailPage() {
     .filter((folder) => folder.subject_id === subject.id)
     .sort((a, b) => a.name.localeCompare(b.name));
   const looseMaterials = subjectMaterials.filter((material) => !material.folder_id);
+  const activeFolder = activeFolderId ? subjectFolders.find((folder) => folder.id === activeFolderId) ?? null : null;
+  const activeFolderName = activeFolderId === "loose" ? "Sem pasta" : activeFolder?.name ?? "";
+  const activeMaterials = activeFolderId === "loose"
+    ? looseMaterials
+    : activeFolderId
+      ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
+      : [];
   const gradeAverage = gradedAssessments.length
     ? gradedAssessments.reduce((sum, assessment) => sum + ((assessment.score ?? 0) / (assessment.max_score || 1)) * 10, 0) / gradedAssessments.length
     : null;
@@ -197,6 +206,41 @@ export default function SubjectDetailPage() {
     } finally {
       setSavingFolder(false);
     }
+  }
+
+  async function deleteFolder(folderId: string, folderName: string) {
+    const ok = window.confirm(`Excluir a pasta "${folderName}"? Os materiais dela voltam para Sem pasta.`);
+    if (!ok) return;
+    setMaterialError(null);
+    try {
+      await removeMaterialFolder(folderId);
+      if (activeFolderId === folderId) setActiveFolderId(null);
+    } catch (error) {
+      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel excluir a pasta.");
+    }
+  }
+
+  function renderDropTarget(id: string | null, label: string) {
+    const targetId = id ?? "loose";
+    return (
+      <button
+        className={`folder-drop-target ${dropTargetId === targetId ? "drop-active" : ""}`}
+        onDragEnter={() => setDropTargetId(targetId)}
+        onDragLeave={() => setDropTargetId(null)}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), id);
+        }}
+        type="button"
+      >
+        <Folder size={15} />
+        {label}
+      </button>
+    );
   }
 
   function renderMaterial(material: Material) {
@@ -374,61 +418,86 @@ export default function SubjectDetailPage() {
           </div>
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
           <div className="material-browser">
-            {subjectFolders.map((folder) => {
-              const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
-              return (
-                <section
-                  className={`material-folder ${dropTargetId === folder.id ? "drop-active" : ""}`}
-                  key={folder.id}
-                  onDragEnter={() => setDropTargetId(folder.id)}
-                  onDragLeave={() => setDropTargetId(null)}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), folder.id);
-                  }}
-                >
-                  <div className="material-folder-header">
-                    <Folder size={18} />
-                    <strong>{folder.name}</strong>
-                    <span>{folderMaterials.length}</span>
+            {!activeFolderId ? (
+              <>
+                {subjectFolders.map((folder) => {
+                  const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
+                  return (
+                    <section
+                      className={`material-folder material-folder-card ${dropTargetId === folder.id ? "drop-active" : ""}`}
+                      key={folder.id}
+                      onDragEnter={() => setDropTargetId(folder.id)}
+                      onDragLeave={() => setDropTargetId(null)}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), folder.id);
+                      }}
+                    >
+                      <button className="material-folder-open" onClick={() => setActiveFolderId(folder.id)} type="button">
+                        <Folder size={18} />
+                        <strong>{folder.name}</strong>
+                        <span>{folderMaterials.length}</span>
+                      </button>
+                      <button className="icon-button danger" onClick={() => deleteFolder(folder.id, folder.name)} title="Excluir pasta" type="button">
+                        <Trash2 size={15} />
+                      </button>
+                    </section>
+                  );
+                })}
+                {subjectFolders.length || looseMaterials.length ? (
+                  <section
+                    className={`material-folder material-folder-card ${dropTargetId === "loose" ? "drop-active" : ""}`}
+                    onDragEnter={() => setDropTargetId("loose")}
+                    onDragLeave={() => setDropTargetId(null)}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), null);
+                    }}
+                  >
+                    <button className="material-folder-open" onClick={() => setActiveFolderId("loose")} type="button">
+                      <Folder size={18} />
+                      <strong>Sem pasta</strong>
+                      <span>{looseMaterials.length}</span>
+                    </button>
+                  </section>
+                ) : null}
+                {!subjectMaterials.length && !subjectFolders.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
+              </>
+            ) : (
+              <section className="material-folder-detail">
+                <div className="material-folder-detail-header">
+                  <button className="ghost-action" onClick={() => setActiveFolderId(null)} type="button"><ArrowLeft size={16} />Voltar</button>
+                  <div>
+                    <strong>{activeFolderName}</strong>
+                    <small>{activeMaterials.length} materiais</small>
                   </div>
-                  <div className="quiet-list">
-                    {folderMaterials.map((material) => renderMaterial(material))}
-                    {!folderMaterials.length ? <p className="muted compact-note">Pasta vazia.</p> : null}
-                  </div>
-                </section>
-              );
-            })}
-            {subjectFolders.length || looseMaterials.length ? (
-              <section
-                className={`material-folder ${dropTargetId === "loose" ? "drop-active" : ""}`}
-                onDragEnter={() => setDropTargetId("loose")}
-                onDragLeave={() => setDropTargetId(null)}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), null);
-                }}
-              >
-                <div className="material-folder-header">
-                  <Folder size={18} />
-                  <strong>Sem pasta</strong>
-                  <span>{looseMaterials.length}</span>
+                  {activeFolder ? (
+                    <button className="icon-button danger" onClick={() => deleteFolder(activeFolder.id, activeFolder.name)} title="Excluir pasta" type="button">
+                      <Trash2 size={15} />
+                    </button>
+                  ) : null}
                 </div>
+                {subjectFolders.length > 1 || activeFolderId !== "loose" ? (
+                  <div className="folder-drop-row">
+                    <span>Mover para</span>
+                    {subjectFolders.filter((folder) => folder.id !== activeFolderId).map((folder) => renderDropTarget(folder.id, folder.name))}
+                    {activeFolderId !== "loose" ? renderDropTarget(null, "Sem pasta") : null}
+                  </div>
+                ) : null}
                 <div className="quiet-list">
-                  {looseMaterials.map((material) => renderMaterial(material))}
-                  {!looseMaterials.length ? <p className="muted compact-note">Nenhum material sem pasta.</p> : null}
+                  {activeMaterials.map((material) => renderMaterial(material))}
+                  {!activeMaterials.length ? <p className="muted compact-note">Pasta vazia.</p> : null}
                 </div>
               </section>
-            ) : null}
-            {!subjectMaterials.length && !subjectFolders.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
+            )}
           </div>
         </Panel>
       ) : null}

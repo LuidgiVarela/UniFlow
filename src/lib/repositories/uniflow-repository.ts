@@ -288,6 +288,19 @@ export async function saveMaterialFolder(folder: MaterialFolder) {
   return data as MaterialFolder;
 }
 
+export async function deleteMaterialFolder(id: string) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    data.materialFolders = data.materialFolders.filter((item) => item.id !== id);
+    data.materials = data.materials.map((item) => (item.folder_id === id ? { ...item, folder_id: null } : item));
+    writeDemoData(data);
+    return;
+  }
+
+  const { error } = await supabase.from("material_folders").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function uploadMaterialFile(subjectId: string, file: File, name?: string, folderId?: string | null) {
   if (!hasSupabaseEnv || !supabase) {
     throw new Error("Upload de arquivos disponível apenas com Supabase configurado.");

@@ -121,6 +121,7 @@ h3 {
 
 .nav-item,
 .subject-nav-item,
+.subject-remove-button,
 .ghost-button,
 .primary-button,
 .icon-button,
@@ -133,7 +134,8 @@ h3 {
 }
 
 .nav-item,
-.subject-nav-item {
+.subject-nav-item,
+.subject-nav-row {
   min-height: 36px;
   justify-content: flex-start;
   padding: 8px 10px;
@@ -142,19 +144,50 @@ h3 {
   background: transparent;
 }
 
+.subject-nav-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 0;
+}
+
+.subject-nav-row .subject-nav-item {
+  min-width: 0;
+}
+
+.subject-remove-button {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  margin-right: 4px;
+  color: var(--subtle);
+  background: transparent;
+  border-radius: 6px;
+  opacity: 0;
+}
+
 .nav-button {
   width: 100%;
 }
 
 .nav-item.active,
-.subject-nav-item.active,
+.subject-nav-row.active,
 .nav-item:hover,
-.subject-nav-item:hover {
+.subject-nav-row:hover {
   background: var(--surface-strong);
   color: var(--foreground);
 }
 
-.subject-nav-item.dragging {
+.subject-nav-row:hover .subject-remove-button,
+.subject-remove-button:focus-visible {
+  opacity: 1;
+}
+
+.subject-remove-button:hover {
+  color: #ff8a8a;
+}
+
+.subject-nav-row.dragging {
   opacity: 0.55;
   outline: 1px solid var(--line);
 }
@@ -830,6 +863,77 @@ label {
 .material-folder.drop-active {
   border-color: var(--accent);
   background: rgba(47, 125, 209, 0.08);
+}
+
+.material-folder-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.material-folder-open {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+}
+
+.material-folder-open span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.material-folder-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.material-folder-detail-header,
+.folder-drop-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.material-folder-detail-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.material-folder-detail-header small,
+.folder-drop-row span {
+  color: var(--muted);
+}
+
+.folder-drop-row {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.folder-drop-target {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground);
+  padding: 6px 10px;
+}
+
+.folder-drop-target.drop-active {
+  border-color: var(--accent);
+  background: rgba(47, 125, 209, 0.1);
 }
 
 .material-folder-header {

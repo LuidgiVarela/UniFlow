@@ -22,7 +22,7 @@ import {
   priorityLabels,
 } from "@/lib/labels";
 import { sortDemandsByPriorityAndDate } from "@/lib/priority";
-import type { Assessment, Demand, Material } from "@/types/domain";
+import type { Assessment, Demand, Material, MaterialFolder } from "@/types/domain";
 
 type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "grades" | "materials";
 
@@ -67,6 +67,7 @@ export default function SubjectDetailPage() {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<MaterialFolder | null>(null);
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [savingFolder, setSavingFolder] = useState(false);
@@ -135,12 +136,10 @@ export default function SubjectDetailPage() {
     .sort((a, b) => a.name.localeCompare(b.name));
   const looseMaterials = subjectMaterials.filter((material) => !material.folder_id);
   const activeFolder = activeFolderId ? subjectFolders.find((folder) => folder.id === activeFolderId) ?? null : null;
-  const activeFolderName = activeFolderId === "loose" ? "Sem pasta" : activeFolder?.name ?? "";
-  const activeMaterials = activeFolderId === "loose"
-    ? looseMaterials
-    : activeFolderId
-      ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
-      : [];
+  const activeFolderName = activeFolder?.name ?? "";
+  const activeMaterials = activeFolderId
+    ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
+    : [];
   const gradeAverage = gradedAssessments.length
     ? gradedAssessments.reduce((sum, assessment) => sum + ((assessment.score ?? 0) / (assessment.max_score || 1)) * 10, 0) / gradedAssessments.length
     : null;
@@ -186,7 +185,14 @@ export default function SubjectDetailPage() {
     }
   }
 
-  async function createFolder(event: React.FormEvent) {
+  function openFolderModal(folder?: MaterialFolder) {
+    setEditingFolder(folder ?? null);
+    setFolderName(folder?.name ?? "");
+    setFolderError(null);
+    setFolderOpen(true);
+  }
+
+  async function saveFolder(event: React.FormEvent) {
     event.preventDefault();
     const trimmed = folderName.trim();
     if (!trimmed) return;
@@ -194,22 +200,23 @@ export default function SubjectDetailPage() {
     setFolderError(null);
     try {
       await upsertMaterialFolder({
-        id: crypto.randomUUID(),
+        id: editingFolder?.id ?? crypto.randomUUID(),
         subject_id: subjectId,
         name: trimmed,
-        created_at: new Date().toISOString(),
+        created_at: editingFolder?.created_at ?? new Date().toISOString(),
       });
       setFolderName("");
+      setEditingFolder(null);
       setFolderOpen(false);
     } catch (error) {
-      setFolderError(error instanceof Error ? error.message : "Nao foi possivel criar a pasta.");
+      setFolderError(error instanceof Error ? error.message : "Nao foi possivel salvar a pasta.");
     } finally {
       setSavingFolder(false);
     }
   }
 
   async function deleteFolder(folderId: string, folderName: string) {
-    const ok = window.confirm(`Excluir a pasta "${folderName}"? Os materiais dela voltam para Sem pasta.`);
+    const ok = window.confirm(`Excluir a pasta "${folderName}"? Os materiais dela continuam soltos em Materiais.`);
     if (!ok) return;
     setMaterialError(null);
     try {
@@ -221,7 +228,7 @@ export default function SubjectDetailPage() {
   }
 
   function renderDropTarget(id: string | null, label: string) {
-    const targetId = id ?? "loose";
+    const targetId = id ?? "root";
     return (
       <button
         className={`folder-drop-target ${dropTargetId === targetId ? "drop-active" : ""}`}
@@ -412,7 +419,7 @@ export default function SubjectDetailPage() {
           <div className="section-tools">
             <h2>Materiais</h2>
             <div className="section-actions">
-              <button className="ghost-action" onClick={() => setFolderOpen(true)} type="button"><FolderPlus size={16} />Nova pasta</button>
+              <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
               <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
             </div>
           </div>
@@ -442,32 +449,27 @@ export default function SubjectDetailPage() {
                         <strong>{folder.name}</strong>
                         <span>{folderMaterials.length}</span>
                       </button>
-                      <button className="icon-button danger" onClick={() => deleteFolder(folder.id, folder.name)} title="Excluir pasta" type="button">
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="row-actions">
+                        <button className="icon-button" onClick={() => openFolderModal(folder)} title="Renomear pasta" type="button">
+                          <Edit size={15} />
+                        </button>
+                        <button className="icon-button danger" onClick={() => deleteFolder(folder.id, folder.name)} title="Excluir pasta" type="button">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </section>
                   );
                 })}
-                {subjectFolders.length || looseMaterials.length ? (
-                  <section
-                    className={`material-folder material-folder-card ${dropTargetId === "loose" ? "drop-active" : ""}`}
-                    onDragEnter={() => setDropTargetId("loose")}
-                    onDragLeave={() => setDropTargetId(null)}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void moveMaterialToFolder(event.dataTransfer.getData("text/plain"), null);
-                    }}
-                  >
-                    <button className="material-folder-open" onClick={() => setActiveFolderId("loose")} type="button">
-                      <Folder size={18} />
-                      <strong>Sem pasta</strong>
+                {looseMaterials.length ? (
+                  <div className={`loose-materials ${dropTargetId === "root" ? "drop-active" : ""}`}>
+                    <div className="loose-materials-header">
+                      <strong>Materiais soltos</strong>
                       <span>{looseMaterials.length}</span>
-                    </button>
-                  </section>
+                    </div>
+                    <div className="quiet-list">
+                      {looseMaterials.map((material) => renderMaterial(material))}
+                    </div>
+                  </div>
                 ) : null}
                 {!subjectMaterials.length && !subjectFolders.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
               </>
@@ -480,16 +482,21 @@ export default function SubjectDetailPage() {
                     <small>{activeMaterials.length} materiais</small>
                   </div>
                   {activeFolder ? (
-                    <button className="icon-button danger" onClick={() => deleteFolder(activeFolder.id, activeFolder.name)} title="Excluir pasta" type="button">
-                      <Trash2 size={15} />
-                    </button>
+                    <div className="row-actions">
+                      <button className="icon-button" onClick={() => openFolderModal(activeFolder)} title="Renomear pasta" type="button">
+                        <Edit size={15} />
+                      </button>
+                      <button className="icon-button danger" onClick={() => deleteFolder(activeFolder.id, activeFolder.name)} title="Excluir pasta" type="button">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   ) : null}
                 </div>
-                {subjectFolders.length > 1 || activeFolderId !== "loose" ? (
+                {subjectFolders.length > 1 || activeFolderId ? (
                   <div className="folder-drop-row">
                     <span>Mover para</span>
                     {subjectFolders.filter((folder) => folder.id !== activeFolderId).map((folder) => renderDropTarget(folder.id, folder.name))}
-                    {activeFolderId !== "loose" ? renderDropTarget(null, "Sem pasta") : null}
+                    {renderDropTarget(null, "Materiais")}
                   </div>
                 ) : null}
                 <div className="quiet-list">
@@ -510,14 +517,19 @@ export default function SubjectDetailPage() {
       <MaterialModal folders={subjectFolders} open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />
       {folderOpen ? (
         <div className="modal-backdrop">
-          <form className="modal form-stack compact-modal" onSubmit={createFolder}>
+          <form className="modal form-stack compact-modal" onSubmit={saveFolder}>
             <div className="modal-header">
-              <h2>Nova pasta</h2>
-              <button className="icon-button" onClick={() => setFolderOpen(false)} type="button">x</button>
+              <h2>{editingFolder ? "Renomear pasta" : "Nova pasta"}</h2>
+              <button className="icon-button" onClick={() => {
+                setFolderOpen(false);
+                setEditingFolder(null);
+              }} type="button">x</button>
             </div>
             <label>Nome<input autoFocus value={folderName} onChange={(event) => setFolderName(event.target.value)} required /></label>
             {folderError ? <p className="form-message error-message">{folderError}</p> : null}
-            <button className="primary-button full" disabled={savingFolder} type="submit">{savingFolder ? "Criando..." : "Criar pasta"}</button>
+            <button className={`primary-button full ${savingFolder ? "is-loading" : ""}`} disabled={savingFolder} type="submit">
+              {savingFolder ? "Salvando..." : editingFolder ? "Salvar nome" : "Criar pasta"}
+            </button>
           </form>
         </div>
       ) : null}

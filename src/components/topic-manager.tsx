@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Edit, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Edit, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import { StatusPill } from "@/components/ui";
@@ -29,6 +29,8 @@ export function TopicManager({ subject }: { subject: Subject }) {
     .sort((a, b) => a.order_index - b.order_index);
   const progress = topicProgress(subjectTopics);
   const [editing, setEditing] = useState<Topic | null>(null);
+  const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
+  const [savingForm, setSavingForm] = useState(false);
 
   async function move(topic: Topic, direction: -1 | 1) {
     const index = subjectTopics.findIndex((item) => item.id === topic.id);
@@ -43,8 +45,23 @@ export function TopicManager({ subject }: { subject: Subject }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!editing) return;
-    await upsertTopic(editing);
-    setEditing(null);
+    setSavingForm(true);
+    try {
+      await upsertTopic(editing);
+      setEditing(null);
+    } finally {
+      setSavingForm(false);
+    }
+  }
+
+  async function toggleTopic(topic: Topic) {
+    const nextStatus: TopicStatus = topic.status === "concluido" ? "nao_iniciado" : "concluido";
+    setSavingTopicId(topic.id);
+    try {
+      await upsertTopic({ ...topic, status: nextStatus });
+    } finally {
+      setSavingTopicId(null);
+    }
   }
 
   return (
@@ -63,16 +80,15 @@ export function TopicManager({ subject }: { subject: Subject }) {
         {subjectTopics.map((topic) => (
           <article className="topic-row" key={topic.id}>
             <button
-              className="topic-status"
-              onClick={() =>
-                upsertTopic({
-                  ...topic,
-                  status: topic.status === "concluido" ? "nao_iniciado" : topic.status === "estudando" ? "concluido" : "estudando",
-                })
-              }
+              aria-checked={topic.status === "concluido"}
+              aria-label={topic.status === "concluido" ? "Marcar topico como nao concluido" : "Marcar topico como concluido"}
+              className={`topic-status ${topic.status === "concluido" ? "checked" : ""} ${savingTopicId === topic.id ? "is-loading" : ""}`}
+              disabled={savingTopicId === topic.id}
+              onClick={() => toggleTopic(topic)}
+              role="checkbox"
               type="button"
             >
-              {topic.status === "concluido" ? "OK" : topic.status === "estudando" ? ">" : "o"}
+              {topic.status === "concluido" ? <Check size={15} /> : null}
             </button>
             <div>
               <strong>{topic.title}</strong>
@@ -102,7 +118,9 @@ export function TopicManager({ subject }: { subject: Subject }) {
               <label>Status<select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value as TopicStatus })}>{statuses.map((status) => <option key={status} value={status}>{topicStatusLabels[status]}</option>)}</select></label>
             </div>
             <label>Observação<textarea value={editing.notes ?? ""} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></label>
-            <button className="primary-button full" type="submit">Salvar tópico</button>
+            <button className={`primary-button full ${savingForm ? "is-loading" : ""}`} disabled={savingForm} type="submit">
+              {savingForm ? "Salvando..." : "Salvar topico"}
+            </button>
           </form>
         </div>
       ) : null}

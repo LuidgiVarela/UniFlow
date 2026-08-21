@@ -113,8 +113,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       },
       async upsertTopic(topic) {
-        await saveTopic(topic);
-        await refresh();
+        const previous = data.topics;
+        setData((current) => {
+          const exists = current.topics.some((item) => item.id === topic.id);
+          return {
+            ...current,
+            topics: exists
+              ? current.topics.map((item) => (item.id === topic.id ? topic : item))
+              : [...current.topics, topic],
+          };
+        });
+        try {
+          await saveTopic(topic);
+          await refresh();
+        } catch (error) {
+          setData((current) => ({ ...current, topics: previous }));
+          throw error;
+        }
       },
       async removeTopic(id) {
         await deleteTopic(id);

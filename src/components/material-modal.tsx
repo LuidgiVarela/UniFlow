@@ -23,12 +23,14 @@ export function MaterialModal({
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!open) return null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setMessage(null);
+    setSaving(true);
     try {
       if (type === "link") {
         await upsertMaterial({
@@ -58,7 +60,9 @@ export function MaterialModal({
       setFolderId("");
       onClose();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o material.");
+      setMessage(error instanceof Error ? error.message : "Nao foi possivel salvar o material.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -76,7 +80,7 @@ export function MaterialModal({
         <label>
           Pasta
           <select value={folderId} onChange={(event) => setFolderId(event.target.value)}>
-            <option value="">Sem pasta</option>
+            <option value="">Solto em Materiais</option>
             {folders.map((folder) => (
               <option key={folder.id} value={folder.id}>{folder.name}</option>
             ))}
@@ -89,7 +93,9 @@ export function MaterialModal({
           <label>URL<input value={url} onChange={(event) => setUrl(event.target.value)} required type="url" /></label>
         )}
         {message ? <p className="form-message">{message}</p> : null}
-        <button className="primary-button full" type="submit">Salvar material</button>
+        <button className={`primary-button full ${saving ? "is-loading" : ""}`} disabled={saving} type="submit">
+          {saving ? "Salvando..." : "Salvar material"}
+        </button>
       </form>
     </div>
   );

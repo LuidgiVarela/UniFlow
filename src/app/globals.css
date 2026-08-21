@@ -578,6 +578,10 @@ label {
   padding: 10px 0;
 }
 
+.error-message {
+  color: #ff8a8a;
+}
+
 .subject-page-header {
   display: flex;
   align-items: flex-start;

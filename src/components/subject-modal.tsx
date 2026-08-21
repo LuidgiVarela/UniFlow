@@ -14,6 +14,8 @@ export function SubjectModal({
   subject?: Subject | null;
 }) {
   const { subjects, upsertSubject } = useAppData();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Subject>({
     id: crypto.randomUUID(),
     name: "",
@@ -36,6 +38,8 @@ export function SubjectModal({
         code: "",
         notes: "",
       }));
+      setError(null);
+      setSaving(false);
     });
   }, [subject, open]);
 
@@ -43,11 +47,19 @@ export function SubjectModal({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    await upsertSubject({
-      ...form,
-      sort_order: form.sort_order ?? subjects.length + 1,
-    });
-    onClose();
+    setSaving(true);
+    setError(null);
+    try {
+      await upsertSubject({
+        ...form,
+        sort_order: form.sort_order ?? subjects.length + 1,
+      });
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Nao foi possivel salvar a materia.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -63,7 +75,8 @@ export function SubjectModal({
           <label>Cor<input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></label>
         </div>
         <label>Observações<textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
-        <button className="primary-button full" type="submit">Salvar</button>
+        {error ? <p className="form-message error-message">{error}</p> : null}
+        <button className="primary-button full" disabled={saving} type="submit">{saving ? "Salvando..." : "Salvar"}</button>
       </form>
     </div>
   );

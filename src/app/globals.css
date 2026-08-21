@@ -236,6 +236,10 @@ h3 {
   gap: 18px;
 }
 
+.content:has(.task-dashboard-page) {
+  width: min(1440px, 100%);
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -630,6 +634,13 @@ label {
   padding: 24px;
 }
 
+.loading-panel {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+}
+
 .auth-card {
   width: min(430px, 100%);
   padding: 28px;
@@ -903,7 +914,7 @@ label {
 }
 
 .task-dashboard-hero h1 {
-  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-size: clamp(2rem, 3.6vw, 3.1rem);
   line-height: 1;
   margin-bottom: 8px;
 }
@@ -938,8 +949,8 @@ label {
 
 .question-dashboard-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(390px, 100%), 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 12px;
   align-items: start;
 }
 

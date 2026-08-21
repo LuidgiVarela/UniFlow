@@ -10,9 +10,18 @@ import { Panel } from "@/components/ui";
 
 export default function TaskDashboardPage() {
   const params = useParams<{ id: string }>();
-  const { demands, subjects } = useAppData();
+  const { demands, loading, subjects } = useAppData();
   const demand = demands.find((item) => item.id === params.id);
   const subject = demand ? subjects.find((item) => item.id === demand.subject_id) : null;
+
+  if (loading) {
+    return (
+      <Panel className="plain-section loading-panel">
+        <p className="eyebrow">UniFlow</p>
+        <h1>Carregando tarefa...</h1>
+      </Panel>
+    );
+  }
 
   if (!demand) {
     return (

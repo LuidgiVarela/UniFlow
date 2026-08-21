@@ -47,6 +47,7 @@ export default function SubjectDetailPage() {
     materialFolders,
     materials,
     topics,
+    loading,
     completeDemand,
     getMaterialUrl,
     removeDemand,
@@ -115,6 +116,15 @@ export default function SubjectDetailPage() {
       active = false;
     };
   }, [getMaterialUrl, materials, params.id, tab]);
+
+  if (loading) {
+    return (
+      <Panel className="plain-section loading-panel">
+        <p className="eyebrow">UniFlow</p>
+        <h1>Carregando materia...</h1>
+      </Panel>
+    );
+  }
 
   if (!subject) {
     return (

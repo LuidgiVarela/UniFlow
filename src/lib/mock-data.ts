@@ -12,7 +12,7 @@ export const mockData: AppData = {
   subjects: [
     {
       id: "sub-lp",
-      name: "Linguagens de Programacao",
+      name: "Linguagens de Programação",
       code: "LP",
       color: "#2f7dd1",
       status: "atencao",
@@ -28,7 +28,7 @@ export const mockData: AppData = {
     },
     {
       id: "sub-oac",
-      name: "Organizacao e Arquitetura de Computadores",
+      name: "Organização e Arquitetura de Computadores",
       code: "OAC",
       color: "#b45f2a",
       status: "tranquilo",
@@ -39,7 +39,7 @@ export const mockData: AppData = {
     {
       id: "dem-1",
       subject_id: "sub-sstd",
-      title: "Terminar questoes 4-8 da Lista 1",
+      title: "Terminar questões 4-8 da Lista 1",
       type: "lista",
       due_date: plus(1),
       priority: "alta",
@@ -51,7 +51,7 @@ export const mockData: AppData = {
     {
       id: "dem-2",
       subject_id: "sub-lp",
-      title: "Revisar recursao e guards",
+      title: "Revisar recursão e guards",
       type: "exercicio",
       due_date: null,
       priority: "media",
@@ -72,16 +72,16 @@ export const mockData: AppData = {
   demandQuestions: [],
   demandQuestionItems: [],
   topics: [
-    { id: "top-lp-1", subject_id: "sub-lp", title: "Paradigmas de programacao", status: "concluido", order_index: 1 },
-    { id: "top-lp-2", subject_id: "sub-lp", title: "Funcoes", status: "concluido", order_index: 2 },
-    { id: "top-lp-3", subject_id: "sub-lp", title: "Recursao", status: "concluido", order_index: 3 },
+    { id: "top-lp-1", subject_id: "sub-lp", title: "Paradigmas de programação", status: "concluido", order_index: 1 },
+    { id: "top-lp-2", subject_id: "sub-lp", title: "Funções", status: "concluido", order_index: 2 },
+    { id: "top-lp-3", subject_id: "sub-lp", title: "Recursão", status: "concluido", order_index: 3 },
     { id: "top-lp-4", subject_id: "sub-lp", title: "Guards", status: "estudando", order_index: 4 },
     { id: "top-lp-5", subject_id: "sub-lp", title: "Listas", status: "nao_iniciado", order_index: 5 },
     { id: "top-lp-6", subject_id: "sub-lp", title: "Tuplas", status: "nao_iniciado", order_index: 6 },
-    { id: "top-lp-7", subject_id: "sub-lp", title: "Funcoes de alta ordem", status: "nao_iniciado", order_index: 7 },
+    { id: "top-lp-7", subject_id: "sub-lp", title: "Funções de alta ordem", status: "nao_iniciado", order_index: 7 },
     { id: "top-1", subject_id: "sub-sstd", title: "Sinais e sistemas", status: "concluido", order_index: 1 },
     { id: "top-2", subject_id: "sub-sstd", title: "Sistemas LTI", status: "estudando", order_index: 2 },
-    { id: "top-3", subject_id: "sub-sstd", title: "Convolucao", status: "nao_iniciado", order_index: 3 },
+    { id: "top-3", subject_id: "sub-sstd", title: "Convolução", status: "nao_iniciado", order_index: 3 },
   ],
   assessments: [
     {

@@ -9,7 +9,7 @@ function errorMessage(error: unknown) {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
     return error.message;
   }
-  return "Nao foi possivel salvar a materia.";
+  return "Não foi possível salvar a matéria.";
 }
 
 export function SubjectModal({

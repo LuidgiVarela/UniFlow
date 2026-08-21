@@ -26,7 +26,7 @@ export default function TaskDashboardPage() {
   if (!demand) {
     return (
       <Panel className="plain-section">
-        <h1>Tarefa nao encontrada</h1>
+        <h1>Tarefa não encontrada</h1>
         <Link className="ghost-action" href="/"><ArrowLeft size={16} />Voltar</Link>
       </Panel>
     );

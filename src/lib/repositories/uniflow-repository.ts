@@ -257,7 +257,7 @@ export async function generateDemandQuestionSet(demandId: string, questionCount:
     const questions: DemandQuestion[] = Array.from({ length: cleanCount }, (_, index) => ({
       id: crypto.randomUUID(),
       demand_id: demandId,
-      label: `Questao ${existingCount + index + 1}`,
+      label: `Questão ${existingCount + index + 1}`,
       difficulty: "media",
       notes: "",
       order_index: existingCount + index + 1,
@@ -292,7 +292,7 @@ export async function generateDemandQuestionSet(demandId: string, questionCount:
     id: crypto.randomUUID(),
     user_id,
     demand_id: demandId,
-    label: `Questao ${existingCount + index + 1}`,
+    label: `Questão ${existingCount + index + 1}`,
     difficulty: "media",
     notes: "",
     order_index: existingCount + index + 1,

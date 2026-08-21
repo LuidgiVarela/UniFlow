@@ -66,7 +66,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
           <div className="progress-track"><span style={{ width: `${progress.percent}%` }} /></div>
         </div>
         <button className="primary-button small" onClick={() => setEditing(blankTopic(subject, subjectTopics.length + 1))} type="button">
-          <Plus size={16} />Topico
+          <Plus size={16} />Tópico
         </button>
       </div>
 
@@ -75,7 +75,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
           <article className="topic-row" key={topic.id}>
             <button
               aria-checked={topic.status === "concluido"}
-              aria-label={topic.status === "concluido" ? "Marcar topico como nao concluido" : "Marcar topico como concluido"}
+              aria-label={topic.status === "concluido" ? "Marcar tópico como não concluído" : "Marcar tópico como concluído"}
               className={`check-button ${topic.status === "concluido" ? "checked" : ""}`}
               onClick={() => toggleTopic(topic)}
               role="checkbox"
@@ -112,7 +112,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
             </div>
             <label>Observação<textarea value={editing.notes ?? ""} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></label>
             <button className={`primary-button full ${savingForm ? "is-loading" : ""}`} disabled={savingForm} type="submit">
-              {savingForm ? "Salvando..." : "Salvar topico"}
+              {savingForm ? "Salvando..." : "Salvar tópico"}
             </button>
           </form>
         </div>

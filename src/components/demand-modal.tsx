@@ -78,7 +78,7 @@ export function DemandModal({
       return;
     }
     if (total !== null && completed !== null && completed > total) {
-      setError("Questões feitas não pode ser maior que o total.");
+      setError("Questões feitas não podem ser maiores que o total.");
       return;
     }
     await upsertDemand(form);

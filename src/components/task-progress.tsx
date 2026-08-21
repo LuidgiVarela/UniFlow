@@ -15,7 +15,7 @@ export function getTaskProgress(demand: Demand): TaskProgressValue | null {
     total,
     completed,
     percent: Math.min(100, Math.round((completed / total) * 100)),
-    label: "questoes",
+    label: "questões",
   };
 }
 

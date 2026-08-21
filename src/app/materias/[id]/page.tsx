@@ -121,7 +121,7 @@ export default function SubjectDetailPage() {
     return (
       <Panel className="plain-section loading-panel">
         <p className="eyebrow">UniFlow</p>
-        <h1>Carregando materia...</h1>
+        <h1>Carregando matéria...</h1>
       </Panel>
     );
   }
@@ -206,7 +206,7 @@ export default function SubjectDetailPage() {
     try {
       await upsertMaterial({ ...material, folder_id: folderId });
     } catch (error) {
-      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel mover o material.");
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível mover o material.");
     } finally {
       setDraggedMaterialId(null);
       setDropTargetId(null);
@@ -237,7 +237,7 @@ export default function SubjectDetailPage() {
       setEditingFolder(null);
       setFolderOpen(false);
     } catch (error) {
-      setFolderError(error instanceof Error ? error.message : "Nao foi possivel salvar a pasta.");
+      setFolderError(error instanceof Error ? error.message : "Não foi possível salvar a pasta.");
     } finally {
       setSavingFolder(false);
     }
@@ -251,7 +251,7 @@ export default function SubjectDetailPage() {
       await removeMaterialFolder(folderId);
       if (activeFolderId === folderId) setActiveFolderId(null);
     } catch (error) {
-      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel excluir a pasta.");
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível excluir a pasta.");
     }
   }
 

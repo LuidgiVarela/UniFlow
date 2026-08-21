@@ -6,9 +6,9 @@ import { useAppData } from "@/components/data-provider";
 import type { Demand, DemandQuestion, DemandQuestionDifficulty, DemandQuestionItem } from "@/types/domain";
 
 const difficulties: Array<{ value: DemandQuestionDifficulty; label: string }> = [
-  { value: "facil", label: "Facil" },
-  { value: "media", label: "Media" },
-  { value: "dificil", label: "Dificil" },
+  { value: "facil", label: "Fácil" },
+  { value: "media", label: "Média" },
+  { value: "dificil", label: "Difícil" },
 ];
 
 function progressText(done: number, total: number) {
@@ -20,6 +20,10 @@ function nextItemLabel(items: DemandQuestionItem[]) {
   const alphabet = "abcdefghijklmnopqrstuvwxyz";
   const nextIndex = items.length;
   return alphabet[nextIndex] ?? `item ${nextIndex + 1}`;
+}
+
+function displayQuestionLabel(label: string) {
+  return label.replace(/^Questao\b/i, "Questão");
 }
 
 export function DemandDashboard({ demand }: { demand: Demand }) {
@@ -70,7 +74,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     try {
       await generateDemandQuestions(demand.id, questionCount, labels);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Nao foi possivel gerar as questoes.");
+      setError(error instanceof Error ? error.message : "Não foi possível gerar as questões.");
     } finally {
       setGenerating(false);
     }
@@ -107,10 +111,10 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
       </div>
 
       <form className="task-generator" onSubmit={submitGenerator}>
-        <label>Questoes<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
+        <label>Questões<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
         <label>Itens iniciais<input value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
         <button className={`primary-button ${generating ? "is-loading" : ""}`} disabled={generating} type="submit">
-          {questions.length ? "Adicionar questoes" : "Configurar lista"}
+          {questions.length ? "Adicionar questões" : "Configurar lista"}
         </button>
       </form>
       {error ? <p className="form-message error-message">{error}</p> : null}
@@ -124,7 +128,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
             <article className="question-card" key={question.id}>
               <div className="question-card-header">
                 <div>
-                  <strong>{question.label}</strong>
+                  <strong>{displayQuestionLabel(question.label)}</strong>
                   <small>{progressText(done, items.length)}</small>
                 </div>
                 <select
@@ -158,7 +162,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
                 </button>
               </div>
               <label className="question-note">
-                Observacao
+                Observação
                 <textarea
                   value={noteValue}
                   onBlur={() => {
@@ -170,7 +174,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
             </article>
           );
         })}
-        {!questions.length ? <p className="muted compact-note">Configure a lista para acompanhar questoes e itens.</p> : null}
+        {!questions.length ? <p className="muted compact-note">Configure a lista para acompanhar questões e itens.</p> : null}
       </div>
     </section>
   );

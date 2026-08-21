@@ -60,7 +60,7 @@ export function MaterialModal({
       setFolderId("");
       onClose();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Nao foi possivel salvar o material.");
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o material.");
     } finally {
       setSaving(false);
     }

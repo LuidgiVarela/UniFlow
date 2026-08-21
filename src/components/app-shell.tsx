@@ -20,6 +20,8 @@ import {
   Home,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings,
   Trash2,
@@ -71,7 +73,7 @@ function SortableSubjectLink({
         className="subject-remove-button"
         onClick={onRemove}
         onPointerDown={(event) => event.stopPropagation()}
-        title="Remover materia"
+        title="Remover matéria"
         type="button"
       >
         <Trash2 size={13} />
@@ -84,6 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { demoMode, signOut, user } = useAuth();
@@ -105,14 +108,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   async function handleRemoveSubject(subject: Subject) {
-    const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a materia e seus dados vinculados.`);
+    const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a matéria e seus dados vinculados.`);
     if (!ok) return;
     await removeSubject(subject.id);
     if (pathname === `/materias/${subject.id}`) router.push("/");
   }
 
+  function toggleSidebar() {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      setSidebarCollapsed(false);
+      setMenuOpen((value) => !value);
+      return;
+    }
+    setSidebarCollapsed((value) => !value);
+  }
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand">
           <span>UniFlow</span>
@@ -160,12 +172,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="main-area">
         <header className="topbar">
           <button
-            aria-label="Abrir menu"
-            className="icon-button mobile-only"
-            onClick={() => setMenuOpen((value) => !value)}
+            aria-label="Alternar menu lateral"
+            className="icon-button sidebar-toggle-button"
+            onClick={toggleSidebar}
             type="button"
           >
-            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            <span className="mobile-toggle-icon">{menuOpen ? <X size={20} /> : <Menu size={20} />}</span>
+            <span className="desktop-toggle-icon">{sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</span>
           </button>
         </header>
         <main className="content">{children}</main>
@@ -175,13 +188,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="modal-backdrop">
           <section className="modal form-stack compact-modal">
             <div className="modal-header">
-              <h2>Configuracoes</h2>
+              <h2>Configurações</h2>
               <button className="icon-button" onClick={() => setSettingsOpen(false)} type="button">x</button>
             </div>
             <div className="settings-list">
               <div>
                 <span>Conta</span>
-                <strong>{demoMode ? "Modo demo" : user?.email ?? "Usuario conectado"}</strong>
+                <strong>{demoMode ? "Modo demo" : user?.email ?? "Usuário conectado"}</strong>
               </div>
               <div>
                 <span>Dados</span>

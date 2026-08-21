@@ -126,17 +126,18 @@ export default function SubjectDetailPage() {
     const material = subjectMaterials.find((item) => item.id === materialId);
     if (!material) return;
     setMaterialError(null);
-    const target = window.open("about:blank", "_blank", "noopener,noreferrer");
+    const target = window.open("about:blank", "_blank");
+    if (!target) {
+      setMaterialError("O navegador bloqueou a nova aba. Permita pop-ups para abrir este material.");
+      return;
+    }
+    target.opener = null;
     try {
       const url = await getMaterialUrl(material);
       if (!url || url === "#") throw new Error("Nao foi possivel gerar o link deste material.");
-      if (target) {
-        target.location.href = url;
-      } else {
-        window.location.assign(url);
-      }
+      target.location.assign(url);
     } catch (error) {
-      target?.close();
+      target.close();
       setMaterialError(error instanceof Error ? error.message : "Nao foi possivel abrir o material.");
     }
   }

@@ -582,6 +582,28 @@ label {
   color: #ff8a8a;
 }
 
+.settings-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 10px 0;
+}
+
+.settings-list span {
+  color: var(--muted);
+}
+
+.settings-list strong {
+  text-align: right;
+}
+
 .subject-page-header {
   display: flex;
   align-items: flex-start;

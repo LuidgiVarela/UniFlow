@@ -81,8 +81,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await refresh();
       },
       async completeDemand(demand) {
-        await saveDemand({ ...demand, status: demand.status === "concluido" ? "pendente" : "concluido" });
-        await refresh();
+        const nextDemand: Demand = {
+          ...demand,
+          status: demand.status === "concluido" ? "pendente" : "concluido",
+        };
+        setData((current) => ({
+          ...current,
+          demands: current.demands.map((item) => (item.id === demand.id ? nextDemand : item)),
+        }));
+        try {
+          await saveDemand(nextDemand);
+          await refresh();
+        } catch (error) {
+          setData((current) => ({
+            ...current,
+            demands: current.demands.map((item) => (item.id === demand.id ? demand : item)),
+          }));
+          throw error;
+        }
       },
       async upsertTopic(topic) {
         await saveTopic(topic);

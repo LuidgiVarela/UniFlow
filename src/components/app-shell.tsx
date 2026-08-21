@@ -68,6 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { demoMode, signOut, user } = useAuth();
   const { subjects, reorderSubjects } = useAppData();
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
@@ -120,7 +121,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </nav>
         <div className="sidebar-footer">
-          <button className="ghost-button" type="button">
+          <button className="ghost-button" onClick={() => setSettingsOpen(true)} type="button">
             <Settings size={17} />
             <span>Configurações</span>
           </button>
@@ -145,6 +146,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="content">{children}</main>
       </div>
       <SubjectModal open={subjectOpen} onClose={() => setSubjectOpen(false)} />
+      {settingsOpen ? (
+        <div className="modal-backdrop">
+          <section className="modal form-stack compact-modal">
+            <div className="modal-header">
+              <h2>Configuracoes</h2>
+              <button className="icon-button" onClick={() => setSettingsOpen(false)} type="button">x</button>
+            </div>
+            <div className="settings-list">
+              <div>
+                <span>Conta</span>
+                <strong>{demoMode ? "Modo demo" : user?.email ?? "Usuario conectado"}</strong>
+              </div>
+              <div>
+                <span>Dados</span>
+                <strong>{demoMode ? "Salvos neste navegador" : "Sincronizados com Supabase"}</strong>
+              </div>
+            </div>
+            <button className="primary-button full" onClick={() => setSettingsOpen(false)} type="button">Fechar</button>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

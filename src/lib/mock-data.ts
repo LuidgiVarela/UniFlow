@@ -126,4 +126,5 @@ export const mockData: AppData = {
       created_at: new Date().toISOString(),
     },
   ],
+  materialFolders: [],
 };

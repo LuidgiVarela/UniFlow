@@ -83,10 +83,19 @@ export type AssessmentTopic = {
 
 export type MaterialType = "file" | "link";
 
+export type MaterialFolder = {
+  id: string;
+  user_id?: string;
+  subject_id: string;
+  name: string;
+  created_at: string;
+};
+
 export type Material = {
   id: string;
   user_id?: string;
   subject_id: string;
+  folder_id?: string | null;
   name: string;
   type: MaterialType;
   file_path?: string | null;
@@ -101,4 +110,5 @@ export type AppData = {
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];
   materials: Material[];
+  materialFolders: MaterialFolder[];
 };

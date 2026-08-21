@@ -85,6 +85,7 @@ create table if not exists public.materials (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   subject_id uuid not null references public.subjects(id) on delete cascade,
+  folder_id uuid,
   name text not null,
   type text not null check (type in ('file', 'link')),
   file_path text,
@@ -92,12 +93,38 @@ create table if not exists public.materials (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.material_folders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.materials add column if not exists folder_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'materials_folder_id_fkey'
+  ) then
+    alter table public.materials
+      add constraint materials_folder_id_fkey
+      foreign key (folder_id)
+      references public.material_folders(id)
+      on delete set null;
+  end if;
+end $$;
+
 alter table public.subjects enable row level security;
 alter table public.demands enable row level security;
 alter table public.topics enable row level security;
 alter table public.assessments enable row level security;
 alter table public.assessment_topics enable row level security;
 alter table public.materials enable row level security;
+alter table public.material_folders enable row level security;
 
 create policy "Users can read own subjects" on public.subjects for select using (auth.uid() = user_id);
 create policy "Users can insert own subjects" on public.subjects for insert with check (auth.uid() = user_id);
@@ -149,12 +176,31 @@ create policy "Users can read own materials" on public.materials for select usin
 create policy "Users can insert own materials" on public.materials for insert with check (
   auth.uid() = user_id
   and exists (select 1 from public.subjects where subjects.id = materials.subject_id and subjects.user_id = auth.uid())
+  and (
+    folder_id is null
+    or exists (select 1 from public.material_folders where material_folders.id = materials.folder_id and material_folders.user_id = auth.uid())
+  )
 );
 create policy "Users can update own materials" on public.materials for update using (auth.uid() = user_id) with check (
   auth.uid() = user_id
   and exists (select 1 from public.subjects where subjects.id = materials.subject_id and subjects.user_id = auth.uid())
+  and (
+    folder_id is null
+    or exists (select 1 from public.material_folders where material_folders.id = materials.folder_id and material_folders.user_id = auth.uid())
+  )
 );
 create policy "Users can delete own materials" on public.materials for delete using (auth.uid() = user_id);
+
+create policy "Users can read own material folders" on public.material_folders for select using (auth.uid() = user_id);
+create policy "Users can insert own material folders" on public.material_folders for insert with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.subjects where subjects.id = material_folders.subject_id and subjects.user_id = auth.uid())
+);
+create policy "Users can update own material folders" on public.material_folders for update using (auth.uid() = user_id) with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.subjects where subjects.id = material_folders.subject_id and subjects.user_id = auth.uid())
+);
+create policy "Users can delete own material folders" on public.material_folders for delete using (auth.uid() = user_id);
 
 insert into storage.buckets (id, name, public)
 values ('subject-materials', 'subject-materials', false)
@@ -180,3 +226,5 @@ create index if not exists assessments_subject_id_idx on public.assessments(subj
 create index if not exists assessments_user_id_date_idx on public.assessments(user_id, date);
 create index if not exists assessment_topics_topic_id_idx on public.assessment_topics(topic_id);
 create index if not exists materials_subject_id_idx on public.materials(subject_id);
+create index if not exists material_folders_subject_id_idx on public.material_folders(subject_id);
+create index if not exists materials_folder_id_idx on public.materials(folder_id);

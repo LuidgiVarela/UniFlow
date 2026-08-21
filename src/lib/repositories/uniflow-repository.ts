@@ -1,6 +1,6 @@
 import { mockData } from "@/lib/mock-data";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
-import type { AppData, Assessment, AssessmentTopic, Demand, Material, Subject, Topic } from "@/types/domain";
+import type { AppData, Assessment, AssessmentTopic, Demand, Material, MaterialFolder, Subject, Topic } from "@/types/domain";
 
 const DEMO_KEY = "uniflow:demo-data";
 
@@ -19,6 +19,7 @@ function readDemoData(): AppData {
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
     materials: parsed.materials ?? [],
+    materialFolders: parsed.materialFolders ?? [],
   };
   writeDemoData(data);
   return data;
@@ -38,13 +39,14 @@ async function requireUserId() {
 export async function loadAppData(): Promise<AppData> {
   if (!hasSupabaseEnv || !supabase) return readDemoData();
 
-  const [subjects, demands, topics, assessments, assessmentTopics, materials] = await Promise.all([
+  const [subjects, demands, topics, assessments, assessmentTopics, materials, materialFolders] = await Promise.all([
     supabase.from("subjects").select("*").order("sort_order", { nullsFirst: false }).order("created_at"),
     supabase.from("demands").select("*").order("due_date", { nullsFirst: false }).order("created_at"),
     supabase.from("topics").select("*").order("order_index"),
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
+    supabase.from("material_folders").select("*").order("name"),
   ]);
 
   for (const result of [subjects, demands, topics, assessments, assessmentTopics, materials]) {
@@ -58,6 +60,7 @@ export async function loadAppData(): Promise<AppData> {
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
     materials: materials.data ?? [],
+    materialFolders: materialFolders.error ? [] : materialFolders.data ?? [],
   } as AppData;
 }
 
@@ -115,6 +118,7 @@ export async function deleteSubject(id: string) {
       data.assessments.some((assessment) => assessment.id === item.assessment_id),
     );
     data.materials = data.materials.filter((item) => item.subject_id !== id);
+    data.materialFolders = data.materialFolders.filter((item) => item.subject_id !== id);
     writeDemoData(data);
     return;
   }
@@ -263,7 +267,28 @@ export async function saveMaterial(material: Material) {
   return data as Material;
 }
 
-export async function uploadMaterialFile(subjectId: string, file: File, name?: string) {
+export async function saveMaterialFolder(folder: MaterialFolder) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.materialFolders.some((item) => item.id === folder.id);
+    data.materialFolders = exists
+      ? data.materialFolders.map((item) => (item.id === folder.id ? folder : item))
+      : [...data.materialFolders, folder];
+    writeDemoData(data);
+    return folder;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("material_folders")
+    .upsert({ ...folder, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as MaterialFolder;
+}
+
+export async function uploadMaterialFile(subjectId: string, file: File, name?: string, folderId?: string | null) {
   if (!hasSupabaseEnv || !supabase) {
     throw new Error("Upload de arquivos disponível apenas com Supabase configurado.");
   }
@@ -278,6 +303,7 @@ export async function uploadMaterialFile(subjectId: string, file: File, name?: s
   return saveMaterial({
     id: crypto.randomUUID(),
     subject_id: subjectId,
+    folder_id: folderId ?? null,
     name: name?.trim() || file.name,
     type: "file",
     file_path: path,

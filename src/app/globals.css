@@ -269,6 +269,12 @@ h3 {
   margin-bottom: 0;
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .compact-item,
 .demand-row,
 .assessment-row,
@@ -796,6 +802,31 @@ label {
 
 .material-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.material-browser {
+  display: grid;
+  gap: 14px;
+}
+
+.material-folder {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.material-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 10px;
+}
+
+.material-folder-header span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 760;
 }
 
 .segmented-control {

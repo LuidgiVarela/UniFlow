@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit, ExternalLink, FileText, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -22,7 +22,7 @@ import {
   priorityLabels,
 } from "@/lib/labels";
 import { sortDemandsByPriorityAndDate } from "@/lib/priority";
-import type { Assessment, Demand } from "@/types/domain";
+import type { Assessment, Demand, Material } from "@/types/domain";
 
 type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "grades" | "materials";
 
@@ -42,6 +42,7 @@ export default function SubjectDetailPage() {
     demands,
     assessments,
     assessmentTopics,
+    materialFolders,
     materials,
     topics,
     completeDemand,
@@ -49,6 +50,7 @@ export default function SubjectDetailPage() {
     removeDemand,
     removeAssessment,
     removeMaterial,
+    upsertMaterialFolder,
   } = useAppData();
   const [tab, setTab] = useState<SubjectTab>("overview");
   const [editSubjectOpen, setEditSubjectOpen] = useState(false);
@@ -58,6 +60,10 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [savingFolder, setSavingFolder] = useState(false);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -85,6 +91,7 @@ export default function SubjectDetailPage() {
     );
   }
 
+  const subjectId = subject.id;
   const upcomingAssessment = nextAssessment(assessments, subject.id);
   const nextTask = subjectDemands.find((demand) => demand.status !== "concluido") ?? null;
   const progress = topicProgress(subjectTopics);
@@ -92,6 +99,10 @@ export default function SubjectDetailPage() {
   const completedAssessments = subjectAssessments.filter((assessment) => assessment.status !== "futura");
   const gradedAssessments = subjectAssessments.filter((assessment) => assessment.score !== null && assessment.max_score);
   const subjectMaterials = materials.filter((material) => material.subject_id === subject.id);
+  const subjectFolders = materialFolders
+    .filter((folder) => folder.subject_id === subject.id)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const looseMaterials = subjectMaterials.filter((material) => !material.folder_id);
   const gradeAverage = gradedAssessments.length
     ? gradedAssessments.reduce((sum, assessment) => sum + ((assessment.score ?? 0) / (assessment.max_score || 1)) * 10, 0) / gradedAssessments.length
     : null;
@@ -140,6 +151,41 @@ export default function SubjectDetailPage() {
       target.close();
       setMaterialError(error instanceof Error ? error.message : "Nao foi possivel abrir o material.");
     }
+  }
+
+  async function createFolder(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = folderName.trim();
+    if (!trimmed) return;
+    setSavingFolder(true);
+    setFolderError(null);
+    try {
+      await upsertMaterialFolder({
+        id: crypto.randomUUID(),
+        subject_id: subjectId,
+        name: trimmed,
+        created_at: new Date().toISOString(),
+      });
+      setFolderName("");
+      setFolderOpen(false);
+    } catch (error) {
+      setFolderError(error instanceof Error ? error.message : "Nao foi possivel criar a pasta.");
+    } finally {
+      setSavingFolder(false);
+    }
+  }
+
+  function renderMaterial(material: Material) {
+    return (
+      <article className="simple-row material-row" key={material.id}>
+        {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
+        <strong>{material.name}</strong>
+        <div className="row-actions">
+          <button className="icon-button" onClick={() => openMaterial(material.id)} title="Abrir" type="button"><ExternalLink size={15} /></button>
+          <button className="icon-button danger" onClick={() => removeMaterial(material)} title="Excluir" type="button"><Trash2 size={15} /></button>
+        </div>
+      </article>
+    );
   }
 
   return (
@@ -281,21 +327,42 @@ export default function SubjectDetailPage() {
         <Panel className="plain-section">
           <div className="section-tools">
             <h2>Materiais</h2>
-            <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
+            <div className="section-actions">
+              <button className="ghost-action" onClick={() => setFolderOpen(true)} type="button"><FolderPlus size={16} />Nova pasta</button>
+              <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
+            </div>
           </div>
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
-          <div className="quiet-list">
-            {subjectMaterials.map((material) => (
-              <article className="simple-row material-row" key={material.id}>
-                {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
-                <strong>{material.name}</strong>
-                <div className="row-actions">
-                  <button className="icon-button" onClick={() => openMaterial(material.id)} title="Abrir" type="button"><ExternalLink size={15} /></button>
-                  <button className="icon-button danger" onClick={() => removeMaterial(material)} title="Excluir" type="button"><Trash2 size={15} /></button>
+          <div className="material-browser">
+            {subjectFolders.map((folder) => {
+              const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
+              return (
+                <section className="material-folder" key={folder.id}>
+                  <div className="material-folder-header">
+                    <Folder size={18} />
+                    <strong>{folder.name}</strong>
+                    <span>{folderMaterials.length}</span>
+                  </div>
+                  <div className="quiet-list">
+                    {folderMaterials.map((material) => renderMaterial(material))}
+                    {!folderMaterials.length ? <p className="muted compact-note">Pasta vazia.</p> : null}
+                  </div>
+                </section>
+              );
+            })}
+            {looseMaterials.length ? (
+              <section className="material-folder">
+                <div className="material-folder-header">
+                  <Folder size={18} />
+                  <strong>Sem pasta</strong>
+                  <span>{looseMaterials.length}</span>
                 </div>
-              </article>
-            ))}
-            {!subjectMaterials.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
+                <div className="quiet-list">
+                  {looseMaterials.map((material) => renderMaterial(material))}
+                </div>
+              </section>
+            ) : null}
+            {!subjectMaterials.length && !subjectFolders.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
           </div>
         </Panel>
       ) : null}
@@ -305,7 +372,20 @@ export default function SubjectDetailPage() {
       <DemandModal open={Boolean(editingDemand)} demand={editingDemand} onClose={() => setEditingDemand(null)} />
       <AssessmentModal open={assessmentOpen} subjectId={subject.id} onClose={() => setAssessmentOpen(false)} />
       <AssessmentModal open={Boolean(editingAssessment)} assessment={editingAssessment} onClose={() => setEditingAssessment(null)} />
-      <MaterialModal open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />
+      <MaterialModal folders={subjectFolders} open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />
+      {folderOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal form-stack compact-modal" onSubmit={createFolder}>
+            <div className="modal-header">
+              <h2>Nova pasta</h2>
+              <button className="icon-button" onClick={() => setFolderOpen(false)} type="button">x</button>
+            </div>
+            <label>Nome<input autoFocus value={folderName} onChange={(event) => setFolderName(event.target.value)} required /></label>
+            {folderError ? <p className="form-message error-message">{folderError}</p> : null}
+            <button className="primary-button full" disabled={savingFolder} type="submit">{savingFolder ? "Criando..." : "Criar pasta"}</button>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }

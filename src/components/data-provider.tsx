@@ -13,11 +13,12 @@ import {
   saveAssessment,
   saveDemand,
   saveMaterial,
+  saveMaterialFolder,
   saveSubject,
   saveTopic,
   uploadMaterialFile,
 } from "@/lib/repositories/uniflow-repository";
-import type { AppData, Assessment, Demand, Material, Subject, Topic } from "@/types/domain";
+import type { AppData, Assessment, Demand, Material, MaterialFolder, Subject, Topic } from "@/types/domain";
 
 type DataContextValue = AppData & {
   loading: boolean;
@@ -33,13 +34,22 @@ type DataContextValue = AppData & {
   upsertAssessment: (assessment: Assessment, topicIds?: string[]) => Promise<void>;
   removeAssessment: (id: string) => Promise<void>;
   upsertMaterial: (material: Material) => Promise<void>;
-  uploadMaterialFile: (subjectId: string, file: File, name?: string) => Promise<void>;
+  upsertMaterialFolder: (folder: MaterialFolder) => Promise<void>;
+  uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
   getMaterialUrl: (material: Material) => Promise<string>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
-const emptyData: AppData = { subjects: [], demands: [], topics: [], assessments: [], assessmentTopics: [], materials: [] };
+const emptyData: AppData = {
+  subjects: [],
+  demands: [],
+  topics: [],
+  assessments: [],
+  assessmentTopics: [],
+  materials: [],
+  materialFolders: [],
+};
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
@@ -120,8 +130,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await saveMaterial(material);
         await refresh();
       },
-      async uploadMaterialFile(subjectId, file, name) {
-        await uploadMaterialFile(subjectId, file, name);
+      async upsertMaterialFolder(folder) {
+        await saveMaterialFolder(folder);
+        await refresh();
+      },
+      async uploadMaterialFile(subjectId, file, name, folderId) {
+        await uploadMaterialFile(subjectId, file, name, folderId);
         await refresh();
       },
       async removeMaterial(material) {

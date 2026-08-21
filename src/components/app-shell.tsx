@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/data-provider";
 import { SubjectModal } from "@/components/subject-modal";
@@ -90,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { demoMode, signOut, user } = useAuth();
-  const { removeSubject, subjects, reorderSubjects } = useAppData();
+  const { demands, removeSubject, subjects, reorderSubjects } = useAppData();
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -106,6 +106,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const next = arrayMove(sortedSubjects, oldIndex, newIndex).map((subject) => subject.id);
     await reorderSubjects(next);
   }
+
+  useEffect(() => {
+    const subjectMatch = pathname.match(/^\/materias\/([^/]+)/);
+    if (subjectMatch) {
+      const subject = subjects.find((item) => item.id === subjectMatch[1]);
+      document.title = subject ? `UniFlow - ${subject.code}` : "UniFlow";
+      return;
+    }
+
+    const taskMatch = pathname.match(/^\/tarefas\/([^/]+)/);
+    if (taskMatch) {
+      const demand = demands.find((item) => item.id === taskMatch[1]);
+      const subject = demand ? subjects.find((item) => item.id === demand.subject_id) : null;
+      document.title = subject ? `UniFlow - ${subject.code}` : "UniFlow";
+      return;
+    }
+
+    document.title = "UniFlow";
+  }, [demands, pathname, subjects]);
 
   async function handleRemoveSubject(subject: Subject) {
     const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a matéria e seus dados vinculados.`);

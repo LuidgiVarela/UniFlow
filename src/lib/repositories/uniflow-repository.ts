@@ -469,7 +469,7 @@ export async function uploadMaterialFile(subjectId: string, file: File, name?: s
   const user_id = await requireUserId();
   if (!user_id) throw new Error("Usuário não autenticado.");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${user_id}/${subjectId}/${crypto.randomUUID()}-${safeName}`;
+  const path = `${user_id}/${subjectId}/${crypto.randomUUID()}/${safeName}`;
   const upload = await supabase.storage.from("subject-materials").upload(path, file, { upsert: false });
   if (upload.error) throw upload.error;
 
@@ -483,6 +483,14 @@ export async function uploadMaterialFile(subjectId: string, file: File, name?: s
     url: null,
     created_at: new Date().toISOString(),
   });
+}
+
+function materialOpenFileName(material: Material) {
+  const storedName = material.file_path?.split("/").pop()?.replace(/^[0-9a-f-]{36}-/i, "") || "material";
+  const extension = storedName.includes(".") ? storedName.slice(storedName.lastIndexOf(".")) : "";
+  const displayName = material.name.trim() || storedName;
+  const hasExtension = /\.[a-z0-9]{1,8}$/i.test(displayName);
+  return (hasExtension ? displayName : `${displayName}${extension}`).replace(/[\\/]/g, "-");
 }
 
 export async function deleteMaterial(material: Material) {
@@ -506,5 +514,6 @@ export async function materialPublicUrl(material: Material) {
   if (!hasSupabaseEnv || !supabase || !material.file_path) return "#";
   const signed = await supabase.storage.from("subject-materials").createSignedUrl(material.file_path, 60 * 10);
   if (signed.error) throw signed.error;
-  return signed.data.signedUrl;
+  const fileName = encodeURIComponent(materialOpenFileName(material));
+  return `/api/materials/open/${fileName}?source=${encodeURIComponent(signed.data.signedUrl)}`;
 }

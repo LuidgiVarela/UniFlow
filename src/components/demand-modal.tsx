@@ -63,24 +63,6 @@ export function DemandModal({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    const total = form.total_items ?? null;
-    const completed = form.completed_items ?? null;
-    if ((total !== null && total < 0) || (completed !== null && completed < 0)) {
-      setError("As quantidades não podem ser negativas.");
-      return;
-    }
-    if ((total !== null && !Number.isInteger(total)) || (completed !== null && !Number.isInteger(completed))) {
-      setError("Use apenas números inteiros.");
-      return;
-    }
-    if (completed !== null && total === 0) {
-      setError("O total precisa ser maior que zero.");
-      return;
-    }
-    if (total !== null && completed !== null && completed > total) {
-      setError("Questões feitas não podem ser maiores que o total.");
-      return;
-    }
     await upsertDemand(form);
     onClose();
   }
@@ -108,11 +90,6 @@ export function DemandModal({
           <label>Prioridade<select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as DemandPriority })}>{priorities.map((priority) => <option key={priority} value={priority}>{priorityLabels[priority]}</option>)}</select></label>
           <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as DemandStatus })}>{statuses.map((status) => <option key={status} value={status}>{demandStatusLabels[status]}</option>)}</select></label>
         </div>
-        <div className="form-grid">
-          <label>Total de questões<input min="0" step="1" type="number" value={form.total_items ?? ""} onChange={(e) => setForm({ ...form, total_items: e.target.value === "" ? null : Number(e.target.value) })} /></label>
-          <label>Questões feitas<input min="0" step="1" type="number" value={form.completed_items ?? ""} onChange={(e) => setForm({ ...form, completed_items: e.target.value === "" ? null : Number(e.target.value) })} /></label>
-        </div>
-        <p className="muted compact-note">Preencha os dois campos para exibir progresso.</p>
         <label>Descrição<textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         {error ? <p className="form-message">{error}</p> : null}
         <button className="primary-button full" disabled={!subjects.length} type="submit">Salvar tarefa</button>

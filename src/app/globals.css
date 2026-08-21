@@ -843,6 +843,11 @@ label {
   font-weight: 800;
 }
 
+.check-button.checked {
+  border-color: var(--accent);
+  background: rgba(47, 125, 209, 0.18);
+}
+
 .task-row.done strong {
   color: var(--muted);
   text-decoration: line-through;

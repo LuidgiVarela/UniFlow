@@ -348,7 +348,7 @@ export default function SubjectDetailPage() {
           <div className="quiet-list">
             {subjectDemands.map((demand) => (
               <article className={`simple-row task-row ${demand.status === "concluido" ? "done" : ""}`} key={demand.id}>
-                <button aria-label={demand.status === "concluido" ? "Marcar como pendente" : "Marcar como concluída"} className="check-button" onClick={() => completeDemand(demand)} type="button">
+                <button aria-label={demand.status === "concluido" ? "Marcar como pendente" : "Marcar como concluída"} className={`check-button ${demand.status === "concluido" ? "checked" : ""}`} onClick={() => completeDemand(demand)} type="button">
                   {demand.status === "concluido" ? "✓" : ""}
                 </button>
                 <div>

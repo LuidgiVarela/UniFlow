@@ -29,7 +29,6 @@ export function TopicManager({ subject }: { subject: Subject }) {
     .sort((a, b) => a.order_index - b.order_index);
   const progress = topicProgress(subjectTopics);
   const [editing, setEditing] = useState<Topic | null>(null);
-  const [savingTopicId, setSavingTopicId] = useState<string | null>(null);
   const [savingForm, setSavingForm] = useState(false);
 
   async function move(topic: Topic, direction: -1 | 1) {
@@ -56,12 +55,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
 
   async function toggleTopic(topic: Topic) {
     const nextStatus: TopicStatus = topic.status === "concluido" ? "nao_iniciado" : "concluido";
-    setSavingTopicId(topic.id);
-    try {
-      await upsertTopic({ ...topic, status: nextStatus });
-    } finally {
-      setSavingTopicId(null);
-    }
+    await upsertTopic({ ...topic, status: nextStatus });
   }
 
   return (
@@ -82,8 +76,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
             <button
               aria-checked={topic.status === "concluido"}
               aria-label={topic.status === "concluido" ? "Marcar topico como nao concluido" : "Marcar topico como concluido"}
-              className={`topic-status ${topic.status === "concluido" ? "checked" : ""} ${savingTopicId === topic.id ? "is-loading" : ""}`}
-              disabled={savingTopicId === topic.id}
+              className={`check-button ${topic.status === "concluido" ? "checked" : ""}`}
               onClick={() => toggleTopic(topic)}
               role="checkbox"
               type="button"

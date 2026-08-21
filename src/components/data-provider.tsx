@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteAssessment,
   deleteDemand,
@@ -55,13 +55,33 @@ const emptyData: AppData = {
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
+  const dataRef = useRef<AppData>(emptyData);
+  const mutationQueues = useRef<Record<string, Promise<void>>>({});
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setData(await loadAppData());
+    const nextData = await loadAppData();
+    dataRef.current = nextData;
+    setData(nextData);
     setLoading(false);
   }, []);
+
+  function updateData(updater: (current: AppData) => AppData) {
+    const nextData = updater(dataRef.current);
+    dataRef.current = nextData;
+    setData(nextData);
+    return nextData;
+  }
+
+  function enqueueMutation(key: string, mutation: () => Promise<void>) {
+    const previous = mutationQueues.current[key] ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(mutation);
+    mutationQueues.current[key] = next.finally(() => {
+      if (mutationQueues.current[key] === next) delete mutationQueues.current[key];
+    });
+    return next;
+  }
 
   useEffect(() => {
     void Promise.resolve().then(refresh);
@@ -93,28 +113,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await refresh();
       },
       async completeDemand(demand) {
-        const nextDemand: Demand = {
-          ...demand,
-          status: demand.status === "concluido" ? "pendente" : "concluido",
-        };
-        setData((current) => ({
-          ...current,
-          demands: current.demands.map((item) => (item.id === demand.id ? nextDemand : item)),
-        }));
-        try {
-          await saveDemand(nextDemand);
-          await refresh();
-        } catch (error) {
-          setData((current) => ({
+        let previousDemand = demand;
+        let nextDemand = demand;
+        updateData((current) => {
+          const currentDemand = current.demands.find((item) => item.id === demand.id) ?? demand;
+          previousDemand = currentDemand;
+          nextDemand = {
+            ...currentDemand,
+            status: currentDemand.status === "concluido" ? "pendente" : "concluido",
+          };
+          return {
             ...current,
-            demands: current.demands.map((item) => (item.id === demand.id ? demand : item)),
+            demands: current.demands.map((item) => (item.id === demand.id ? nextDemand : item)),
+          };
+        });
+        try {
+          await enqueueMutation(`demand:${demand.id}`, () => saveDemand(nextDemand).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({
+            ...current,
+            demands: current.demands.map((item) => (item.id === demand.id ? previousDemand : item)),
           }));
           throw error;
         }
       },
       async upsertTopic(topic) {
-        const previous = data.topics;
-        setData((current) => {
+        const previousTopics = dataRef.current.topics;
+        updateData((current) => {
           const exists = current.topics.some((item) => item.id === topic.id);
           return {
             ...current,
@@ -124,10 +149,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           };
         });
         try {
-          await saveTopic(topic);
-          await refresh();
+          await enqueueMutation(`topic:${topic.id}`, () => saveTopic(topic).then(() => undefined));
         } catch (error) {
-          setData((current) => ({ ...current, topics: previous }));
+          updateData((current) => ({ ...current, topics: previousTopics }));
           throw error;
         }
       },

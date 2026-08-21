@@ -6,7 +6,10 @@ import { useParams } from "next/navigation";
 import { CloseTaskPageButton } from "@/components/close-task-page-button";
 import { DemandDashboard } from "@/components/demand-dashboard";
 import { useAppData } from "@/components/data-provider";
-import { Panel } from "@/components/ui";
+import { Panel, StatusPill } from "@/components/ui";
+import { formatDate } from "@/lib/date";
+import { supportsQuestionDashboard } from "@/lib/demands";
+import { demandStatusLabels, demandTypeLabels, priorityLabels } from "@/lib/labels";
 
 export default function TaskDashboardPage() {
   const params = useParams<{ id: string }>();
@@ -32,6 +35,8 @@ export default function TaskDashboardPage() {
     );
   }
 
+  const fallbackHref = subject ? `/materias/${subject.id}` : "/";
+
   return (
     <>
       <header className="subject-page-header">
@@ -39,9 +44,38 @@ export default function TaskDashboardPage() {
           {subject ? <p className="subject-kicker" style={{ color: subject.color }}>{subject.code}</p> : null}
           <h1>{demand.title}</h1>
         </div>
-        <CloseTaskPageButton fallbackHref={subject ? `/materias/${subject.id}` : "/"} />
+        <CloseTaskPageButton fallbackHref={fallbackHref} />
       </header>
-      <DemandDashboard demand={demand} />
+      {supportsQuestionDashboard(demand.type) ? (
+        <DemandDashboard demand={demand} />
+      ) : (
+        <Panel className="plain-section task-detail-panel">
+          <div className="section-tools">
+            <h2>Detalhes da tarefa</h2>
+            <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
+          </div>
+          <div className="task-detail-grid">
+            <div>
+              <span>Tipo</span>
+              <strong>{demandTypeLabels[demand.type]}</strong>
+            </div>
+            <div>
+              <span>Status</span>
+              <strong>{demandStatusLabels[demand.status]}</strong>
+            </div>
+            <div>
+              <span>Prazo</span>
+              <strong>{demand.due_date ? formatDate(demand.due_date) : "Sem prazo"}</strong>
+            </div>
+          </div>
+          {demand.description ? (
+            <div className="task-description-block">
+              <span>Descrição</span>
+              <p>{demand.description}</p>
+            </div>
+          ) : null}
+        </Panel>
+      )}
     </>
   );
 }

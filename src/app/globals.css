@@ -933,6 +933,44 @@ label {
   text-decoration: underline;
 }
 
+.task-title-static {
+  display: block;
+  color: var(--foreground);
+  font-weight: 800;
+}
+
+.task-detail-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-detail-grid div,
+.task-description-block {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.task-detail-grid span,
+.task-description-block span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.task-description-block p {
+  color: var(--foreground);
+  line-height: 1.5;
+}
+
 .task-dashboard-page {
   display: grid;
   gap: 16px;
@@ -1492,6 +1530,7 @@ label {
   .dashboard-grid,
   .week-grid,
   .form-grid,
+  .task-detail-grid,
   .task-generator,
   .task-stats-panel {
     grid-template-columns: 1fr;

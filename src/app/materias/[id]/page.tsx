@@ -14,6 +14,7 @@ import { TopicManager } from "@/components/topic-manager";
 import { EmptyState, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText, nextAssessment, topicProgress } from "@/lib/academic";
 import { formatDate } from "@/lib/date";
+import { supportsQuestionDashboard } from "@/lib/demands";
 import {
   assessmentStatusLabels,
   assessmentTypeLabels,
@@ -380,9 +381,13 @@ export default function SubjectDetailPage() {
                   {demand.status === "concluido" ? "✓" : ""}
                 </button>
                 <div>
-                  <Link className="task-title-button" href={`/tarefas/${demand.id}`} target="_blank">
-                    {demand.title}
-                  </Link>
+                  {supportsQuestionDashboard(demand.type) ? (
+                    <Link className="task-title-button" href={`/tarefas/${demand.id}`} target="_blank">
+                      {demand.title}
+                    </Link>
+                  ) : (
+                    <strong className="task-title-static">{demand.title}</strong>
+                  )}
                   <small>{[demand.due_date ? formatDate(demand.due_date) : null, demandTypeLabels[demand.type], demandStatusLabels[demand.status]].filter(Boolean).join(" - ")}</small>
                   <TaskProgress demand={demand} progress={detailedDemandProgress(demand)} />
                 </div>

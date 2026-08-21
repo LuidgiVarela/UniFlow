@@ -234,6 +234,18 @@ export async function saveDemandQuestionItem(item: DemandQuestionItem) {
   return data as DemandQuestionItem;
 }
 
+export async function deleteDemandQuestionItem(id: string) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    data.demandQuestionItems = data.demandQuestionItems.filter((item) => item.id !== id);
+    writeDemoData(data);
+    return;
+  }
+
+  const { error } = await supabase.from("demand_question_items").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function generateDemandQuestionSet(demandId: string, questionCount: number, itemLabels: string[]) {
   const cleanCount = Math.max(0, Math.floor(questionCount));
   const cleanLabels = itemLabels.map((label) => label.trim()).filter(Boolean);

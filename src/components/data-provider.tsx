@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   deleteAssessment,
   deleteDemand,
+  deleteDemandQuestionItem,
   deleteMaterialFolder,
   deleteMaterial,
   deleteSubject,
@@ -45,6 +46,7 @@ type DataContextValue = AppData & {
   completeDemand: (demand: Demand) => Promise<void>;
   upsertDemandQuestion: (question: DemandQuestion) => Promise<void>;
   upsertDemandQuestionItem: (item: DemandQuestionItem) => Promise<void>;
+  removeDemandQuestionItem: (id: string) => Promise<void>;
   generateDemandQuestions: (demandId: string, questionCount: number, itemLabels: string[]) => Promise<void>;
   upsertTopic: (topic: Topic) => Promise<void>;
   removeTopic: (id: string) => Promise<void>;
@@ -186,6 +188,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
         try {
           await enqueueMutation(`demand-question-item:${item.id}`, () => saveDemandQuestionItem(item).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
+          throw error;
+        }
+      },
+      async removeDemandQuestionItem(id) {
+        const previousItems = dataRef.current.demandQuestionItems;
+        updateData((current) => ({
+          ...current,
+          demandQuestionItems: current.demandQuestionItems.filter((item) => item.id !== id),
+        }));
+        try {
+          await deleteDemandQuestionItem(id);
         } catch (error) {
           updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
           throw error;

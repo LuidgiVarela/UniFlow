@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
-import { DemandDashboardModal } from "@/components/demand-dashboard-modal";
 import { useAppData } from "@/components/data-provider";
 import { MaterialModal } from "@/components/material-modal";
 import { SubjectModal } from "@/components/subject-modal";
@@ -61,7 +60,6 @@ export default function SubjectDetailPage() {
   const [editSubjectOpen, setEditSubjectOpen] = useState(false);
   const [demandOpen, setDemandOpen] = useState(false);
   const [editingDemand, setEditingDemand] = useState<Demand | null>(null);
-  const [dashboardDemand, setDashboardDemand] = useState<Demand | null>(null);
   const [assessmentOpen, setAssessmentOpen] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
@@ -372,9 +370,9 @@ export default function SubjectDetailPage() {
                   {demand.status === "concluido" ? "✓" : ""}
                 </button>
                 <div>
-                  <button className="task-title-button" onClick={() => setDashboardDemand(demand)} type="button">
+                  <Link className="task-title-button" href={`/tarefas/${demand.id}`} target="_blank">
                     {demand.title}
-                  </button>
+                  </Link>
                   <small>{[demand.due_date ? formatDate(demand.due_date) : null, demandTypeLabels[demand.type], demandStatusLabels[demand.status]].filter(Boolean).join(" - ")}</small>
                   <TaskProgress demand={demand} progress={detailedDemandProgress(demand)} />
                 </div>
@@ -534,7 +532,6 @@ export default function SubjectDetailPage() {
       <SubjectModal open={editSubjectOpen} subject={subject} onClose={() => setEditSubjectOpen(false)} />
       <DemandModal open={demandOpen} subjectId={subject.id} onClose={() => setDemandOpen(false)} />
       <DemandModal open={Boolean(editingDemand)} demand={editingDemand} onClose={() => setEditingDemand(null)} />
-      <DemandDashboardModal demand={dashboardDemand} onClose={() => setDashboardDemand(null)} />
       <AssessmentModal open={assessmentOpen} subjectId={subject.id} onClose={() => setAssessmentOpen(false)} />
       <AssessmentModal open={Boolean(editingAssessment)} assessment={editingAssessment} onClose={() => setEditingAssessment(null)} />
       <MaterialModal folders={subjectFolders} open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />

@@ -889,6 +889,30 @@ label {
   text-decoration: underline;
 }
 
+.task-dashboard-page {
+  display: grid;
+  gap: 16px;
+}
+
+.task-dashboard-hero {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.task-dashboard-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.task-dashboard-hero p {
+  color: var(--muted);
+  font-weight: 760;
+}
+
 .task-dashboard-modal {
   width: min(920px, calc(100vw - 28px));
   max-height: min(780px, calc(100vh - 28px));
@@ -955,13 +979,24 @@ label {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: transparent;
   color: var(--foreground);
-  padding: 0 10px;
   font-weight: 760;
+  overflow: hidden;
+}
+
+.question-item > button:first-child {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0 10px;
+  font-weight: inherit;
 }
 
 .question-item span {
@@ -980,6 +1015,28 @@ label {
 
 .question-item.done span {
   border-color: var(--accent);
+}
+
+.question-item-remove {
+  width: 30px;
+  align-self: stretch;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--danger);
+}
+
+.question-add-item {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground);
+  padding: 0 10px;
+  font-weight: 760;
 }
 
 .question-note {

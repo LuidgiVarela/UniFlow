@@ -57,6 +57,7 @@ export default function SubjectDetailPage() {
   const [assessmentOpen, setAssessmentOpen] = useState(false);
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
+  const [materialError, setMaterialError] = useState<string | null>(null);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -124,8 +125,20 @@ export default function SubjectDetailPage() {
   async function openMaterial(materialId: string) {
     const material = subjectMaterials.find((item) => item.id === materialId);
     if (!material) return;
-    const url = await getMaterialUrl(material);
-    window.open(url, "_blank", "noopener,noreferrer");
+    setMaterialError(null);
+    const target = window.open("about:blank", "_blank", "noopener,noreferrer");
+    try {
+      const url = await getMaterialUrl(material);
+      if (!url || url === "#") throw new Error("Nao foi possivel gerar o link deste material.");
+      if (target) {
+        target.location.href = url;
+      } else {
+        window.location.assign(url);
+      }
+    } catch (error) {
+      target?.close();
+      setMaterialError(error instanceof Error ? error.message : "Nao foi possivel abrir o material.");
+    }
   }
 
   return (
@@ -269,6 +282,7 @@ export default function SubjectDetailPage() {
             <h2>Materiais</h2>
             <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
           </div>
+          {materialError ? <p className="form-message error-message">{materialError}</p> : null}
           <div className="quiet-list">
             {subjectMaterials.map((material) => (
               <article className="simple-row material-row" key={material.id}>

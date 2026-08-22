@@ -7,56 +7,51 @@ import { PageHeader, Panel } from "@/components/ui";
 import type { Subject } from "@/types/domain";
 
 const MIN_ATTENDANCE = 0.75;
+const ABSENCES_PER_CLASS = 2;
 
-function allowedAbsences(totalClasses: number) {
-  if (!totalClasses) return 0;
-  return Math.floor(totalClasses * (1 - MIN_ATTENDANCE));
+function allowedAbsences(courseHours: number) {
+  if (!courseHours) return 0;
+  return Math.floor(courseHours * (1 - MIN_ATTENDANCE));
 }
 
-function presencePercent(totalClasses: number, absences: number) {
-  if (!totalClasses) return 100;
-  return Math.max(0, Math.round(((totalClasses - absences) / totalClasses) * 100));
+function presencePercent(courseHours: number, absences: number) {
+  if (!courseHours) return 100;
+  return Math.max(0, Math.round(((courseHours - absences) / courseHours) * 100));
 }
 
-function absenceTone(remaining: number, totalClasses: number) {
-  if (!totalClasses) return "neutral";
+function absenceTone(remaining: number, courseHours: number) {
+  if (!courseHours) return "neutral";
   if (remaining < 0) return "danger";
-  if (remaining <= 1) return "warning";
+  if (remaining <= ABSENCES_PER_CLASS) return "warning";
   return "ok";
 }
 
 export default function FaltometroPage() {
   const { subjects, upsertSubject } = useAppData();
-  const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
-  const [classDrafts, setClassDrafts] = useState<Record<string, string>>({});
+  const [hourDrafts, setHourDrafts] = useState<Record<string, string>>({});
   const sortedSubjects = useMemo(
     () => [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999)),
     [subjects],
   );
 
   async function updateSubject(subject: Subject, patch: Partial<Subject>) {
-    setSavingIds((current) => ({ ...current, [subject.id]: true }));
-    try {
-      await upsertSubject({ ...subject, ...patch });
-    } finally {
-      setSavingIds((current) => ({ ...current, [subject.id]: false }));
-    }
+    await upsertSubject({ ...subject, ...patch });
   }
 
-  function classInputValue(subject: Subject) {
-    return classDrafts[subject.id] ?? String(Math.max(0, subject.total_classes ?? 0));
+  function hoursInputValue(subject: Subject) {
+    return hourDrafts[subject.id] ?? String(Math.max(0, subject.total_classes ?? 0));
   }
 
-  function saveClassCount(subject: Subject) {
-    const draft = classDrafts[subject.id];
+  function saveCourseHours(subject: Subject) {
+    const draft = hourDrafts[subject.id];
     if (draft === undefined) return;
-    const totalClasses = Math.max(0, Number(draft) || 0);
-    setClassDrafts((current) => {
+    const courseHours = Math.max(0, Number(draft) || 0);
+    setHourDrafts((current) => {
       const next = { ...current };
       delete next[subject.id];
       return next;
     });
-    void updateSubject(subject, { total_classes: totalClasses });
+    void updateSubject(subject, { total_classes: courseHours });
   }
 
   return (
@@ -65,13 +60,12 @@ export default function FaltometroPage() {
       <Panel className="plain-section attendance-panel">
         <div className="attendance-list">
           {sortedSubjects.map((subject) => {
-            const totalClasses = Math.max(0, subject.total_classes ?? 0);
+            const courseHours = Math.max(0, subject.total_classes ?? 0);
             const absences = Math.max(0, subject.absences_count ?? 0);
-            const allowed = allowedAbsences(totalClasses);
+            const allowed = allowedAbsences(courseHours);
             const remaining = allowed - absences;
-            const percent = presencePercent(totalClasses, absences);
-            const tone = absenceTone(remaining, totalClasses);
-            const saving = savingIds[subject.id];
+            const percent = presencePercent(courseHours, absences);
+            const tone = absenceTone(remaining, courseHours);
 
             return (
               <article className={`attendance-row ${tone}`} key={subject.id}>
@@ -84,14 +78,13 @@ export default function FaltometroPage() {
                 </div>
 
                 <label>
-                  Aulas
+                  Carga horária
                   <input
-                    disabled={saving}
                     min="0"
                     type="number"
-                    value={classInputValue(subject)}
-                    onBlur={() => saveClassCount(subject)}
-                    onChange={(event) => setClassDrafts((current) => ({ ...current, [subject.id]: event.target.value }))}
+                    value={hoursInputValue(subject)}
+                    onBlur={() => saveCourseHours(subject)}
+                    onChange={(event) => setHourDrafts((current) => ({ ...current, [subject.id]: event.target.value }))}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") event.currentTarget.blur();
                     }}
@@ -103,8 +96,9 @@ export default function FaltometroPage() {
                   <div>
                     <button
                       className="icon-button"
-                      disabled={saving || absences <= 0}
-                      onClick={() => updateSubject(subject, { absences_count: Math.max(0, absences - 1) })}
+                      disabled={absences <= 0}
+                      onClick={() => void updateSubject(subject, { absences_count: Math.max(0, absences - ABSENCES_PER_CLASS) })}
+                      title="Remover uma aula dupla"
                       type="button"
                     >
                       <Minus size={15} />
@@ -112,8 +106,8 @@ export default function FaltometroPage() {
                     <strong>{absences}</strong>
                     <button
                       className="icon-button"
-                      disabled={saving}
-                      onClick={() => updateSubject(subject, { absences_count: absences + 1 })}
+                      onClick={() => void updateSubject(subject, { absences_count: absences + ABSENCES_PER_CLASS })}
+                      title="Adicionar uma aula dupla"
                       type="button"
                     >
                       <Plus size={15} />
@@ -123,8 +117,8 @@ export default function FaltometroPage() {
 
                 <div className="attendance-meter">
                   <div>
-                    <strong>{totalClasses ? `${Math.max(remaining, 0)} restantes` : "Defina as aulas"}</strong>
-                    <small>{totalClasses ? `${allowed} faltas permitidas` : "Use o total do semestre"}</small>
+                    <strong>{courseHours ? `${Math.max(remaining, 0)} faltas restantes` : "Defina a carga"}</strong>
+                    <small>{courseHours ? `${allowed} faltas permitidas` : "Ex.: 30, 60 ou 90 horas"}</small>
                   </div>
                   <div className="progress-track subtle">
                     <span style={{ width: `${percent}%` }} />
@@ -132,7 +126,7 @@ export default function FaltometroPage() {
                 </div>
 
                 <span className={`attendance-pill ${tone}`}>
-                  {totalClasses ? `${percent}% presença` : "sem cálculo"}
+                  {courseHours ? `${percent}% presença` : "sem cálculo"}
                 </span>
               </article>
             );

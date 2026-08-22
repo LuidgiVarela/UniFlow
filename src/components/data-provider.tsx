@@ -119,8 +119,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loading,
       refresh,
       async upsertSubject(subject) {
-        await saveSubject(subject);
-        await refresh(false);
+        const previousSubjects = dataRef.current.subjects;
+        updateData((current) => {
+          const exists = current.subjects.some((item) => item.id === subject.id);
+          return {
+            ...current,
+            subjects: exists
+              ? current.subjects.map((item) => (item.id === subject.id ? subject : item))
+              : [...current.subjects, subject],
+          };
+        });
+        try {
+          await enqueueMutation(`subject:${subject.id}`, () => saveSubject(subject).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, subjects: previousSubjects }));
+          throw error;
+        }
       },
       async removeSubject(id) {
         await deleteSubject(id);

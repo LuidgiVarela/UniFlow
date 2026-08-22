@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  CalendarX2,
   Home,
   LogOut,
   Menu,
@@ -108,6 +109,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    if (pathname === "/faltometro") {
+      document.title = "UniFlow - Faltômetro";
+      return;
+    }
+
     const subjectMatch = pathname.match(/^\/materias\/([^/]+)/);
     if (subjectMatch) {
       const subject = subjects.find((item) => item.id === subjectMatch[1]);
@@ -153,6 +159,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link className={`nav-item ${pathname === "/" ? "active" : ""}`} href="/" onClick={() => setMenuOpen(false)}>
             <Home size={17} />
             <span>Visão geral</span>
+          </Link>
+          <Link className={`nav-item ${pathname === "/faltometro" ? "active" : ""}`} href="/faltometro" onClick={() => setMenuOpen(false)}>
+            <CalendarX2 size={17} />
+            <span>Faltômetro</span>
           </Link>
 
           <p className="sidebar-label">Matérias</p>

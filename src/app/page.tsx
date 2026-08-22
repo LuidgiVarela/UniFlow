@@ -18,8 +18,7 @@ export default function Home() {
   const undatedDemands = sortDemandsByPriorityAndDate(openDemands.filter((demand) => !demand.due_date));
   const upcomingAssessments = assessments
     .filter((assessment) => assessment.status === "futura" && assessment.date)
-    .sort((a, b) => new Date(`${a.date}T12:00:00`).getTime() - new Date(`${b.date}T12:00:00`).getTime())
-    .slice(0, 5);
+    .sort((a, b) => new Date(`${a.date}T12:00:00`).getTime() - new Date(`${b.date}T12:00:00`).getTime());
 
   function subjectFor(id: string) {
     return subjects.find((subject) => subject.id === id);

@@ -12,6 +12,7 @@ create table if not exists public.subjects (
   classroom text,
   schedule text,
   total_classes integer,
+  absences_count integer not null default 0,
   professor_progress integer,
   student_progress integer,
   professor_position text,
@@ -19,6 +20,8 @@ create table if not exists public.subjects (
   sort_order integer,
   created_at timestamptz not null default now()
 );
+
+alter table public.subjects add column if not exists absences_count integer not null default 0;
 
 create table if not exists public.demands (
   id uuid primary key default gen_random_uuid(),

@@ -1316,6 +1316,112 @@ label {
   min-height: 72px;
 }
 
+.attendance-panel {
+  max-width: 1040px;
+}
+
+.attendance-list {
+  display: grid;
+  gap: 12px;
+}
+
+.attendance-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(86px, 0.32fr) minmax(132px, 0.45fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.attendance-row.warning {
+  border-color: rgba(245, 190, 92, 0.42);
+  background: rgba(245, 190, 92, 0.035);
+}
+
+.attendance-row.danger {
+  border-color: rgba(255, 112, 112, 0.45);
+  background: rgba(255, 112, 112, 0.035);
+}
+
+.attendance-subject {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attendance-subject div,
+.attendance-meter,
+.attendance-stepper {
+  display: grid;
+  gap: 6px;
+}
+
+.attendance-subject strong,
+.attendance-subject small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-subject small,
+.attendance-meter small,
+.attendance-stepper span {
+  color: var(--muted);
+}
+
+.attendance-row label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.attendance-row input {
+  min-height: 38px;
+}
+
+.attendance-stepper > div {
+  display: grid;
+  grid-template-columns: 34px minmax(34px, auto) 34px;
+  align-items: center;
+  gap: 6px;
+}
+
+.attendance-stepper strong {
+  text-align: center;
+  font-size: 1.25rem;
+}
+
+.attendance-pill {
+  justify-self: end;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.attendance-pill.ok {
+  border-color: rgba(50, 220, 89, 0.35);
+  color: #57d66d;
+}
+
+.attendance-pill.warning {
+  border-color: rgba(245, 190, 92, 0.5);
+  color: #f5be5c;
+}
+
+.attendance-pill.danger {
+  border-color: rgba(255, 112, 112, 0.5);
+  color: var(--danger);
+}
+
 .material-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
   cursor: grab;
@@ -1614,6 +1720,7 @@ label {
   .topic-row,
   .question-card-header,
   .simple-row,
+  .attendance-row,
   .material-row,
   .quiet-row,
   .timeline-row {

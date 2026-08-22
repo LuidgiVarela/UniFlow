@@ -26,6 +26,7 @@ export type Subject = {
   classroom?: string | null;
   schedule?: string | null;
   total_classes?: number | null;
+  absences_count?: number | null;
   professor_progress?: number | null;
   student_progress?: number | null;
   professor_position?: string | null;

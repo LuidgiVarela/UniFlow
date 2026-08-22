@@ -37,7 +37,7 @@ import type {
 
 type DataContextValue = AppData & {
   loading: boolean;
-  refresh: () => Promise<void>;
+  refresh: (showLoading?: boolean) => Promise<void>;
   upsertSubject: (subject: Subject) => Promise<void>;
   removeSubject: (id: string) => Promise<void>;
   reorderSubjects: (ids: string[]) => Promise<void>;
@@ -79,12 +79,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const mutationQueues = useRef<Record<string, Promise<void>>>({});
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    const nextData = await loadAppData();
-    dataRef.current = nextData;
-    setData(nextData);
-    setLoading(false);
+  const refresh = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const nextData = await loadAppData();
+      dataRef.current = nextData;
+      setData(nextData);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
   }, []);
 
   function updateData(updater: (current: AppData) => AppData) {
@@ -104,7 +107,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    void Promise.resolve().then(refresh);
+    void Promise.resolve().then(() => refresh());
   }, [refresh]);
 
   const value = useMemo<DataContextValue>(
@@ -114,23 +117,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh,
       async upsertSubject(subject) {
         await saveSubject(subject);
-        await refresh();
+        await refresh(false);
       },
       async removeSubject(id) {
         await deleteSubject(id);
-        await refresh();
+        await refresh(false);
       },
       async reorderSubjects(ids) {
         await persistSubjectOrder(ids);
-        await refresh();
+        await refresh(false);
       },
       async upsertDemand(demand) {
         await saveDemand(demand);
-        await refresh();
+        await refresh(false);
       },
       async removeDemand(id) {
         await deleteDemand(id);
-        await refresh();
+        await refresh(false);
       },
       async completeDemand(demand) {
         let previousDemand = demand;
@@ -208,7 +211,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async generateDemandQuestions(demandId, questionCount, itemLabels) {
         await generateDemandQuestionSet(demandId, questionCount, itemLabels);
-        await refresh();
+        await refresh(false);
       },
       async upsertTopic(topic) {
         const previousTopics = dataRef.current.topics;
@@ -230,35 +233,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async removeTopic(id) {
         await deleteTopic(id);
-        await refresh();
+        await refresh(false);
       },
       async upsertAssessment(assessment, topicIds) {
         await saveAssessment(assessment, topicIds);
-        await refresh();
+        await refresh(false);
       },
       async removeAssessment(id) {
         await deleteAssessment(id);
-        await refresh();
+        await refresh(false);
       },
       async upsertMaterial(material) {
         await saveMaterial(material);
-        await refresh();
+        await refresh(false);
       },
       async upsertMaterialFolder(folder) {
         await saveMaterialFolder(folder);
-        await refresh();
+        await refresh(false);
       },
       async removeMaterialFolder(id) {
         await deleteMaterialFolder(id);
-        await refresh();
+        await refresh(false);
       },
       async uploadMaterialFile(subjectId, file, name, folderId) {
         await uploadMaterialFile(subjectId, file, name, folderId);
-        await refresh();
+        await refresh(false);
       },
       async removeMaterial(material) {
         await deleteMaterial(material);
-        await refresh();
+        await refresh(false);
       },
       async getMaterialUrl(material) {
         return materialPublicUrl(material);

@@ -22,6 +22,7 @@ export function DemandModal({
 }) {
   const { subjects, upsertDemand } = useAppData();
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Demand>({
     id: crypto.randomUUID(),
     subject_id: "",
@@ -63,8 +64,15 @@ export function DemandModal({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    await upsertDemand(form);
-    onClose();
+    setSaving(true);
+    try {
+      await upsertDemand(form);
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível salvar a tarefa.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -92,7 +100,9 @@ export function DemandModal({
         </div>
         <label>Descrição<textarea value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         {error ? <p className="form-message">{error}</p> : null}
-        <button className="primary-button full" disabled={!subjects.length} type="submit">Salvar tarefa</button>
+        <button className={`primary-button full ${saving ? "is-loading" : ""}`} disabled={!subjects.length || saving} type="submit">
+          {saving ? "Salvando..." : "Salvar tarefa"}
+        </button>
       </form>
     </div>
   );

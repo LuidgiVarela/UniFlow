@@ -40,6 +40,8 @@ export function AssessmentModal({
   const fallbackSubjectId = subjectId ?? subjects[0]?.id ?? "";
   const [form, setForm] = useState<Assessment>(createBlankAssessment(fallbackSubjectId));
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -54,6 +56,8 @@ export function AssessmentModal({
       }
       setForm(createBlankAssessment(fallbackSubjectId));
       setSelectedTopics([]);
+      setError(null);
+      setSaving(false);
     });
   }, [assessment, assessmentTopics, fallbackSubjectId, open]);
 
@@ -66,8 +70,16 @@ export function AssessmentModal({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    await upsertAssessment(form, selectedTopics);
-    onClose();
+    setSaving(true);
+    setError(null);
+    try {
+      await upsertAssessment(form, selectedTopics);
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível salvar a avaliação.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -109,7 +121,10 @@ export function AssessmentModal({
             </label>
           )) : <p className="muted">Cadastre tópicos nesta matéria para vincular conteúdo.</p>}
         </fieldset>
-        <button className="primary-button full" disabled={!subjects.length} type="submit">Salvar avaliação</button>
+        {error ? <p className="form-message error-message">{error}</p> : null}
+        <button className={`primary-button full ${saving ? "is-loading" : ""}`} disabled={!subjects.length || saving} type="submit">
+          {saving ? "Salvando..." : "Salvar avaliação"}
+        </button>
       </form>
     </div>
   );

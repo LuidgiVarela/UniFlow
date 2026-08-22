@@ -67,6 +67,10 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
   );
   const percent = totalItems ? Math.round((doneItems / totalItems) * 100) : 0;
   const importantQuestions = questions.filter((question) => question.important).length;
+  const importantItems = questions.reduce(
+    (sum, question) => sum + (itemsByQuestion[question.id]?.filter((item) => item.important).length ?? 0),
+    0,
+  );
   const completedQuestions = questions.filter((question) => {
     const items = itemsByQuestion[question.id] ?? [];
     return items.length > 0 && items.every((item) => item.done);
@@ -107,6 +111,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
       question_id: question.id,
       label: nextItemLabel(items),
       done: false,
+      important: false,
       order_index: orderIndex,
       created_at: new Date().toISOString(),
     });
@@ -139,6 +144,10 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         <div className="task-stat-card">
           <strong>{importantQuestions}</strong>
           <small>questões importantes</small>
+        </div>
+        <div className="task-stat-card">
+          <strong>{importantItems}</strong>
+          <small>itens para revisar</small>
         </div>
         <div className="task-stat-card">
           <strong>{Math.max(questions.length - completedQuestions, 0)}</strong>
@@ -202,7 +211,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
               </div>
               <div className="question-items">
                 {items.map((item) => (
-                  <div className={`question-item ${item.done ? "done" : ""}`} key={item.id}>
+                  <div className={`question-item ${item.done ? "done" : ""} ${item.important ? "important" : ""}`} key={item.id}>
                     <button
                       aria-checked={item.done}
                       onClick={() => upsertDemandQuestionItem({ ...item, done: !item.done })}
@@ -211,6 +220,15 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
                     >
                       <span>{item.done ? <Check size={14} /> : null}</span>
                       {item.label}
+                    </button>
+                    <button
+                      aria-label={item.important ? "Remover item da revisão" : "Marcar item para revisar"}
+                      className="question-item-star"
+                      onClick={() => upsertDemandQuestionItem({ ...item, important: !item.important })}
+                      title={item.important ? "Item para revisar" : "Marcar para revisar"}
+                      type="button"
+                    >
+                      <Star size={12} />
                     </button>
                     <button className="question-item-remove" onClick={() => removeDemandQuestionItem(item.id)} title="Remover item" type="button">
                       <Trash2 size={13} />

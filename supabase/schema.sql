@@ -67,9 +67,12 @@ create table if not exists public.demand_question_items (
   question_id uuid not null references public.demand_questions(id) on delete cascade,
   label text not null,
   done boolean not null default false,
+  important boolean not null default false,
   order_index integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.demand_question_items add column if not exists important boolean not null default false;
 
 create table if not exists public.topics (
   id uuid primary key default gen_random_uuid(),

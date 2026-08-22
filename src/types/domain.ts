@@ -67,6 +67,7 @@ export type DemandQuestionItem = {
   question_id: string;
   label: string;
   done: boolean;
+  important?: boolean;
   order_index: number;
   created_at: string;
 };

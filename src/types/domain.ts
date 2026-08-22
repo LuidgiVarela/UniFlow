@@ -123,6 +123,7 @@ export type Material = {
   type: MaterialType;
   file_path?: string | null;
   url?: string | null;
+  sort_order?: number | null;
   created_at: string;
 };
 

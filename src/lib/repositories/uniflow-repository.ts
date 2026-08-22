@@ -429,6 +429,23 @@ export async function saveMaterial(material: Material) {
   return data as Material;
 }
 
+export async function reorderMaterials(materials: Material[]) {
+  if (!materials.length) return;
+
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const updates = new Map(materials.map((material) => [material.id, material]));
+    data.materials = data.materials.map((material) => updates.get(material.id) ?? material);
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const rows = materials.map((material) => ({ ...material, user_id }));
+  const { error } = await supabase.from("materials").upsert(rows);
+  if (error) throw error;
+}
+
 export async function saveMaterialFolder(folder: MaterialFolder) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();

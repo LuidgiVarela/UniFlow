@@ -37,6 +37,20 @@ const tabs: Array<{ id: SubjectTab; label: string }> = [
   { id: "materials", label: "Materiais" },
 ];
 
+function sortMaterials(a: Material, b: Material) {
+  const orderA = a.sort_order ?? Number.MAX_SAFE_INTEGER;
+  const orderB = b.sort_order ?? Number.MAX_SAFE_INTEGER;
+  if (orderA !== orderB) return orderA - orderB;
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+}
+
+function moveListItem<T>(items: T[], fromIndex: number, toIndex: number) {
+  const nextItems = [...items];
+  const [item] = nextItems.splice(fromIndex, 1);
+  nextItems.splice(toIndex, 0, item);
+  return nextItems;
+}
+
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const {
@@ -56,6 +70,7 @@ export default function SubjectDetailPage() {
     removeAssessment,
     removeMaterial,
     removeMaterialFolder,
+    reorderMaterials,
     upsertMaterial,
     upsertMaterialFolder,
   } = useAppData();
@@ -69,6 +84,7 @@ export default function SubjectDetailPage() {
   const [materialError, setMaterialError] = useState<string | null>(null);
   const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
+  const [dragOverMaterialId, setDragOverMaterialId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
@@ -144,7 +160,7 @@ export default function SubjectDetailPage() {
   const upcomingAssessments = subjectAssessments.filter((assessment) => assessment.status === "futura");
   const completedAssessments = subjectAssessments.filter((assessment) => assessment.status !== "futura");
   const gradedAssessments = subjectAssessments.filter((assessment) => assessment.score !== null && assessment.max_score);
-  const subjectMaterials = materials.filter((material) => material.subject_id === subject.id);
+  const subjectMaterials = materials.filter((material) => material.subject_id === subject.id).sort(sortMaterials);
   const subjectFolders = materialFolders
     .filter((folder) => folder.subject_id === subject.id)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -197,6 +213,36 @@ export default function SubjectDetailPage() {
       setMaterialError(error instanceof Error ? error.message : "Não foi possível mover o material.");
     } finally {
       setDraggedMaterialId(null);
+      setDragOverMaterialId(null);
+      setDropTargetId(null);
+    }
+  }
+
+  async function reorderMaterialList(sourceId: string, targetId: string) {
+    const source = subjectMaterials.find((material) => material.id === sourceId);
+    const target = subjectMaterials.find((material) => material.id === targetId);
+    if (!source || !target) return;
+    const folderId = source.folder_id ?? null;
+    if ((target.folder_id ?? null) !== folderId) return;
+
+    const currentList = subjectMaterials.filter((material) => (material.folder_id ?? null) === folderId);
+    const fromIndex = currentList.findIndex((material) => material.id === sourceId);
+    const toIndex = currentList.findIndex((material) => material.id === targetId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+
+    const orderedMaterials = moveListItem(currentList, fromIndex, toIndex).map((material, index) => ({
+      ...material,
+      sort_order: index + 1,
+    }));
+
+    setMaterialError(null);
+    try {
+      await reorderMaterials(orderedMaterials);
+    } catch (error) {
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível reorganizar os materiais.");
+    } finally {
+      setDraggedMaterialId(null);
+      setDragOverMaterialId(null);
       setDropTargetId(null);
     }
   }
@@ -268,18 +314,43 @@ export default function SubjectDetailPage() {
 
   function renderMaterial(material: Material) {
     const href = materialUrls[material.id] || undefined;
+    const canReorderHere =
+      draggedMaterialId !== null &&
+      draggedMaterialId !== material.id &&
+      subjectMaterials.some(
+        (item) => item.id === draggedMaterialId && (item.folder_id ?? null) === (material.folder_id ?? null),
+      );
     return (
       <article
-        className={`simple-row material-row ${draggedMaterialId === material.id ? "dragging" : ""}`}
+        className={`simple-row material-row ${draggedMaterialId === material.id ? "dragging" : ""} ${dragOverMaterialId === material.id ? "drag-over" : ""}`}
         draggable
         key={material.id}
-        onDragEnd={() => setDraggedMaterialId(null)}
+        onDragEnd={() => {
+          setDraggedMaterialId(null);
+          setDragOverMaterialId(null);
+          setDropTargetId(null);
+        }}
+        onDragLeave={() => setDragOverMaterialId(null)}
+        onDragOver={(event) => {
+          if (!canReorderHere) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setDragOverMaterialId(material.id);
+        }}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", material.id);
           setDraggedMaterialId(material.id);
+          setDragOverMaterialId(null);
           setMaterialError(null);
         }}
+        onDrop={(event) => {
+          if (!canReorderHere) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void reorderMaterialList(event.dataTransfer.getData("text/plain"), material.id);
+        }}
+        title="Arraste para reorganizar ou mover"
       >
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
         <strong>{material.name}</strong>

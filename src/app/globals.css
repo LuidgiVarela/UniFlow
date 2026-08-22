@@ -1306,6 +1306,12 @@ label {
   transform: scale(0.99);
 }
 
+.material-row.drag-over {
+  border-color: var(--accent);
+  background: rgba(47, 125, 209, 0.08);
+  transform: translateY(1px);
+}
+
 .material-browser {
   display: grid;
   gap: 14px;

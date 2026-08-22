@@ -12,6 +12,7 @@ import {
   generateDemandQuestionSet,
   loadAppData,
   materialPublicUrl,
+  reorderMaterials as persistMaterialOrder,
   reorderSubjects as persistSubjectOrder,
   saveAssessment,
   saveDemand,
@@ -57,6 +58,7 @@ type DataContextValue = AppData & {
   removeMaterialFolder: (id: string) => Promise<void>;
   uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
   uploadMaterialFiles: (subjectId: string, files: File[], folderId?: string | null) => Promise<void>;
+  reorderMaterials: (materials: Material[]) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
   getMaterialUrl: (material: Material) => Promise<string>;
 };
@@ -265,6 +267,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await Promise.all(files.map((file) => uploadMaterialFile(subjectId, file, undefined, folderId)));
         } finally {
           await refresh(false);
+        }
+      },
+      async reorderMaterials(materials) {
+        const previousMaterials = dataRef.current.materials;
+        const updates = new Map(materials.map((material) => [material.id, material]));
+        updateData((current) => ({
+          ...current,
+          materials: current.materials.map((material) => updates.get(material.id) ?? material),
+        }));
+        try {
+          await persistMaterialOrder(materials);
+        } catch (error) {
+          updateData((current) => ({ ...current, materials: previousMaterials }));
+          throw error;
         }
       },
       async removeMaterial(material) {

@@ -114,6 +114,7 @@ create table if not exists public.materials (
   type text not null check (type in ('file', 'link')),
   file_path text,
   url text,
+  sort_order integer,
   created_at timestamptz not null default now()
 );
 
@@ -126,6 +127,7 @@ create table if not exists public.material_folders (
 );
 
 alter table public.materials add column if not exists folder_id uuid;
+alter table public.materials add column if not exists sort_order integer;
 
 do $$
 begin
@@ -288,3 +290,4 @@ create index if not exists assessment_topics_topic_id_idx on public.assessment_t
 create index if not exists materials_subject_id_idx on public.materials(subject_id);
 create index if not exists material_folders_subject_id_idx on public.material_folders(subject_id);
 create index if not exists materials_folder_id_idx on public.materials(folder_id);
+create index if not exists materials_folder_sort_order_idx on public.materials(folder_id, sort_order);

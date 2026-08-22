@@ -26,6 +26,10 @@ function absenceTone(remaining: number, courseHours: number) {
   return "ok";
 }
 
+function remainingClassDays(remainingAbsences: number) {
+  return Math.max(0, Math.floor(remainingAbsences / ABSENCES_PER_CLASS));
+}
+
 export default function FaltometroPage() {
   const { subjects, upsertSubject } = useAppData();
   const [hourDrafts, setHourDrafts] = useState<Record<string, string>>({});
@@ -64,6 +68,7 @@ export default function FaltometroPage() {
             const absences = Math.max(0, subject.absences_count ?? 0);
             const allowed = allowedAbsences(courseHours);
             const remaining = allowed - absences;
+            const remainingDays = remainingClassDays(remaining);
             const percent = presencePercent(courseHours, absences);
             const tone = absenceTone(remaining, courseHours);
 
@@ -118,7 +123,8 @@ export default function FaltometroPage() {
                 <div className="attendance-meter">
                   <div>
                     <strong>{courseHours ? `${Math.max(remaining, 0)} faltas restantes` : "Defina a carga"}</strong>
-                    <small>{courseHours ? `${allowed} faltas permitidas` : "Ex.: 30, 60 ou 90 horas"}</small>
+                    <small>{courseHours ? `${remainingDays} dias de aula restantes` : "Ex.: 30, 60 ou 90 horas"}</small>
+                    {courseHours ? <small>{allowed} faltas permitidas</small> : null}
                   </div>
                   <div className="progress-track subtle">
                     <span style={{ width: `${percent}%` }} />

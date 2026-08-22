@@ -1360,6 +1360,15 @@ label {
   gap: 6px;
 }
 
+.attendance-meter > div {
+  display: grid;
+  gap: 2px;
+}
+
+.attendance-meter strong {
+  line-height: 1.2;
+}
+
 .attendance-subject strong,
 .attendance-subject small {
   overflow: hidden;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { TaskProgress } from "@/components/task-progress";
+import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
 import { PageHeader, Panel } from "@/components/ui";
 import { useAppData } from "@/components/data-provider";
 import { assessmentDaysText } from "@/lib/academic";
@@ -10,7 +10,7 @@ import { demandTypeLabels } from "@/lib/labels";
 import { sortDemandsByPriorityAndDate } from "@/lib/priority";
 
 export default function Home() {
-  const { subjects, demands, assessments } = useAppData();
+  const { subjects, demands, demandQuestionItems, demandQuestions, assessments } = useAppData();
   const today = toIsoDate(new Date());
   const openDemands = demands.filter((demand) => demand.status !== "concluido");
   const todayItems = openDemands.filter((demand) => demand.due_date === today);
@@ -41,7 +41,7 @@ export default function Home() {
                   <div>
                     <strong>{item.title}</strong>
                     <small>{demandTypeLabels[item.type]}</small>
-                    <TaskProgress demand={item} />
+                    <TaskProgress demand={item} progress={getDetailedTaskProgress(item, demandQuestions, demandQuestionItems)} />
                   </div>
                 </Link>
               );
@@ -63,7 +63,7 @@ export default function Home() {
                 <div>
                   <strong>{demand.title}</strong>
                   <small>{demandTypeLabels[demand.type]}</small>
-                  <TaskProgress demand={demand} />
+                  <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                 </div>
                 <small>{days === 0 ? "hoje" : days < 0 ? `${Math.abs(days)}d atrasado` : `${days}d`}</small>
               </Link>
@@ -84,7 +84,7 @@ export default function Home() {
                   <div>
                     <strong>{demand.title}</strong>
                     <small>{demandTypeLabels[demand.type]}</small>
-                    <TaskProgress demand={demand} />
+                    <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                   </div>
                 </Link>
               );

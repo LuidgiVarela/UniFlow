@@ -9,7 +9,7 @@ import { DemandModal } from "@/components/demand-modal";
 import { useAppData } from "@/components/data-provider";
 import { MaterialModal } from "@/components/material-modal";
 import { SubjectModal } from "@/components/subject-modal";
-import { TaskProgress, type TaskProgressValue } from "@/components/task-progress";
+import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
 import { TopicManager } from "@/components/topic-manager";
 import { EmptyState, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText, nextAssessment, topicProgress } from "@/lib/academic";
@@ -183,22 +183,6 @@ export default function SubjectDetailPage() {
     );
   }
 
-  function detailedDemandProgress(demand: Demand): TaskProgressValue | null {
-    const questionIds = demandQuestions
-      .filter((question) => question.demand_id === demand.id)
-      .map((question) => question.id);
-    if (!questionIds.length) return null;
-    const items = demandQuestionItems.filter((item) => questionIds.includes(item.question_id));
-    if (!items.length) return null;
-    const completed = items.filter((item) => item.done).length;
-    return {
-      total: items.length,
-      completed,
-      percent: Math.min(100, Math.round((completed / items.length) * 100)),
-      label: "itens",
-    };
-  }
-
   async function moveMaterialToFolder(materialId: string, folderId: string | null) {
     const material = subjectMaterials.find((item) => item.id === materialId);
     if (!material) return;
@@ -338,7 +322,7 @@ export default function SubjectDetailPage() {
                 <div className="line-block">
                   <strong>{nextTask.title}</strong>
                   <small>{[nextTask.due_date ? formatDate(nextTask.due_date) : null, demandTypeLabels[nextTask.type]].filter(Boolean).join(" - ")}</small>
-                  <TaskProgress demand={nextTask} progress={detailedDemandProgress(nextTask)} />
+                  <TaskProgress demand={nextTask} progress={getDetailedTaskProgress(nextTask, demandQuestions, demandQuestionItems)} />
                 </div>
               ) : <p className="muted compact-note">Nenhuma tarefa pendente.</p>}
             </section>
@@ -389,7 +373,7 @@ export default function SubjectDetailPage() {
                     <strong className="task-title-static">{demand.title}</strong>
                   )}
                   <small>{[demand.due_date ? formatDate(demand.due_date) : null, demandTypeLabels[demand.type], demandStatusLabels[demand.status]].filter(Boolean).join(" - ")}</small>
-                  <TaskProgress demand={demand} progress={detailedDemandProgress(demand)} />
+                  <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
                 <div className="row-actions">

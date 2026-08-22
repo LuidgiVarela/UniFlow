@@ -89,6 +89,7 @@ h3 {
   flex-direction: column;
   gap: 28px;
   overflow-y: auto;
+  overflow-x: hidden;
   transition: transform 180ms ease;
   z-index: 30;
 }
@@ -212,10 +213,20 @@ h3 {
 
 .ghost-button,
 .link-button {
+  min-width: 0;
   justify-content: flex-start;
   background: transparent;
   color: var(--muted);
   padding: 8px 10px;
+}
+
+.nav-item span,
+.subject-nav-item span,
+.ghost-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ghost-button:hover,

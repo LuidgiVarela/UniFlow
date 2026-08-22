@@ -16,7 +16,7 @@ function createBlankAssessment(subjectId: string): Assessment {
     name: "",
     type: "prova",
     date: toIsoDate(new Date()),
-    weight: 30,
+    weight: null,
     max_score: 10,
     score: null,
     description: "",

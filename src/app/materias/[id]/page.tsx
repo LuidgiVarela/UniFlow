@@ -15,6 +15,7 @@ import { EmptyState, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText, nextAssessment, topicProgress } from "@/lib/academic";
 import { formatDate } from "@/lib/date";
 import { supportsQuestionDashboard } from "@/lib/demands";
+import { assessmentWeightText, calculateWeightedAverage } from "@/lib/grades";
 import {
   assessmentStatusLabels,
   assessmentTypeLabels,
@@ -153,9 +154,7 @@ export default function SubjectDetailPage() {
   const activeMaterials = activeFolderId
     ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
     : [];
-  const gradeAverage = gradedAssessments.length
-    ? gradedAssessments.reduce((sum, assessment) => sum + ((assessment.score ?? 0) / (assessment.max_score || 1)) * 10, 0) / gradedAssessments.length
-    : null;
+  const gradeAverage = calculateWeightedAverage(gradedAssessments);
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -167,10 +166,14 @@ export default function SubjectDetailPage() {
 
   function renderAssessment(assessment: Assessment, result = false) {
     return (
-      <article className="simple-row" key={assessment.id}>
-        <div>
+      <article className="simple-row assessment-list-row" key={assessment.id}>
+        <div className="demand-main">
           <strong>{assessment.name}</strong>
-          <small>{assessmentTypeLabels[assessment.type]} - {formatDate(assessment.date)} - Peso {assessment.weight ?? "-"}%</small>
+          <div className="demand-meta">
+            {[assessmentTypeLabels[assessment.type], formatDate(assessment.date), assessmentWeightText(assessment)].filter(Boolean).map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
           {result ? <small>{assessment.score ?? "-"} / {assessment.max_score ?? "-"}</small> : null}
           {assessmentTopicsText(assessment) ? <small>Conteúdo: {assessmentTopicsText(assessment)}</small> : null}
         </div>
@@ -428,7 +431,7 @@ export default function SubjectDetailPage() {
           </div>
           <div className="partial-average">
             <span>Média parcial</span>
-            <strong>{gradeAverage === null ? "-" : gradeAverage.toFixed(1)}</strong>
+            <strong>{gradeAverage === null ? "Sem cálculo definido" : gradeAverage.toFixed(1)}</strong>
           </div>
         </Panel>
       ) : null}

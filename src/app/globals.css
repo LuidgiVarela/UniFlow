@@ -380,6 +380,10 @@ h3 {
   border-radius: 0;
 }
 
+.assessment-list-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .quiet-row,
 .timeline-row {
   display: grid;

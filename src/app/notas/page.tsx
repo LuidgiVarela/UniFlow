@@ -7,6 +7,7 @@ import { useAppData } from "@/components/data-provider";
 import { EmptyState, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText } from "@/lib/academic";
 import { formatDate } from "@/lib/date";
+import { assessmentWeightText, calculateWeightedAverage } from "@/lib/grades";
 import { assessmentStatusLabels, assessmentTypeLabels } from "@/lib/labels";
 import type { Assessment } from "@/types/domain";
 
@@ -25,19 +26,8 @@ export default function NotesPage() {
   const averages = useMemo(
     () =>
       subjects.map((subject) => {
-        const items = assessments.filter(
-          (assessment) =>
-            assessment.subject_id === subject.id &&
-            assessment.score !== null &&
-            assessment.max_score &&
-            assessment.weight !== null,
-        );
-        const totalWeight = items.reduce((sum, item) => sum + (item.weight ?? 0), 0);
-        const weighted = items.reduce(
-          (sum, item) => sum + ((item.score ?? 0) / (item.max_score || 1)) * 10 * (item.weight ?? 0),
-          0,
-        );
-        return { subject, average: totalWeight ? weighted / totalWeight : null };
+        const items = assessments.filter((assessment) => assessment.subject_id === subject.id);
+        return { subject, average: calculateWeightedAverage(items) };
       }),
     [assessments, subjects],
   );
@@ -56,7 +46,7 @@ export default function NotesPage() {
           <div className="demand-meta">
             <span>{assessmentTypeLabels[assessment.type]}</span>
             <span>{formatDate(assessment.date)}</span>
-            <span>Peso {assessment.weight ?? "-"}%</span>
+            {assessmentWeightText(assessment) ? <span>{assessmentWeightText(assessment)}</span> : null}
             <span>{result ? `Nota ${assessment.score ?? "-"} / ${assessment.max_score ?? "-"}` : assessmentDaysText(assessment)}</span>
           </div>
         </div>
@@ -92,7 +82,7 @@ export default function NotesPage() {
               <article className="compact-item metric-row" key={subject.id}>
                 <strong style={{ color: subject.color }}>{subject.code}</strong>
                 <span>{subject.name}</span>
-                <strong>{average === null ? "Sem dados suficientes" : average.toFixed(2)}</strong>
+                <strong>{average === null ? "Sem cálculo definido" : average.toFixed(2)}</strong>
               </article>
             ))}
           </div>

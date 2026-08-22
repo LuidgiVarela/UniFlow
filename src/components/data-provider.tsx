@@ -56,6 +56,7 @@ type DataContextValue = AppData & {
   upsertMaterialFolder: (folder: MaterialFolder) => Promise<void>;
   removeMaterialFolder: (id: string) => Promise<void>;
   uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
+  uploadMaterialFiles: (subjectId: string, files: File[], folderId?: string | null) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
   getMaterialUrl: (material: Material) => Promise<string>;
 };
@@ -258,6 +259,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       async uploadMaterialFile(subjectId, file, name, folderId) {
         await uploadMaterialFile(subjectId, file, name, folderId);
         await refresh(false);
+      },
+      async uploadMaterialFiles(subjectId, files, folderId) {
+        try {
+          await Promise.all(files.map((file) => uploadMaterialFile(subjectId, file, undefined, folderId)));
+        } finally {
+          await refresh(false);
+        }
       },
       async removeMaterial(material) {
         await deleteMaterial(material);

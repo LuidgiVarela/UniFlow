@@ -5,6 +5,8 @@ import { useAppData } from "@/components/data-provider";
 import { hasSupabaseEnv } from "@/lib/supabase/client";
 import type { MaterialFolder, MaterialType } from "@/types/domain";
 
+const maxFilesPerUpload = 5;
+
 export function MaterialModal({
   open,
   onClose,
@@ -16,12 +18,13 @@ export function MaterialModal({
   folders: MaterialFolder[];
   subjectId: string;
 }) {
-  const { upsertMaterial, uploadMaterialFile } = useAppData();
+  const { upsertMaterial, uploadMaterialFile, uploadMaterialFiles } = useAppData();
   const [type, setType] = useState<MaterialType>("file");
   const [folderId, setFolderId] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -48,15 +51,24 @@ export function MaterialModal({
           setMessage("Upload de arquivos precisa do Supabase configurado. Links continuam funcionando no modo demo.");
           return;
         }
-        if (!file) {
-          setMessage("Selecione um arquivo.");
+        if (!files.length) {
+          setMessage("Selecione pelo menos um arquivo.");
           return;
         }
-        await uploadMaterialFile(subjectId, file, name, folderId || null);
+        if (files.length > maxFilesPerUpload) {
+          setMessage(`Selecione no máximo ${maxFilesPerUpload} arquivos por vez.`);
+          return;
+        }
+        if (files.length === 1) {
+          await uploadMaterialFile(subjectId, files[0], name, folderId || null);
+        } else {
+          await uploadMaterialFiles(subjectId, files, folderId || null);
+        }
       }
       setName("");
       setUrl("");
-      setFile(null);
+      setFiles([]);
+      setFileInputKey((current) => current + 1);
       setFolderId("");
       onClose();
     } catch (error) {
@@ -75,7 +87,17 @@ export function MaterialModal({
         </div>
         <div className="segmented-control">
           <button className={type === "file" ? "active" : ""} onClick={() => setType("file")} type="button">Arquivo</button>
-          <button className={type === "link" ? "active" : ""} onClick={() => setType("link")} type="button">Link</button>
+          <button
+            className={type === "link" ? "active" : ""}
+            onClick={() => {
+              setType("link");
+              setFiles([]);
+              setFileInputKey((current) => current + 1);
+            }}
+            type="button"
+          >
+            Link
+          </button>
         </div>
         <label>
           Pasta
@@ -86,15 +108,41 @@ export function MaterialModal({
             ))}
           </select>
         </label>
-        <label>Nome<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Opcional" /></label>
+        <label>
+          Nome
+          <input
+            disabled={type === "file" && files.length > 1}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={type === "file" && files.length > 1 ? "Usando o nome de cada arquivo" : "Opcional"}
+          />
+        </label>
         {type === "file" ? (
-          <label>Arquivo<input onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
+          <label>
+            Arquivos
+            <input
+              key={fileInputKey}
+              multiple
+              onChange={(event) => {
+                const selectedFiles = Array.from(event.target.files ?? []);
+                setFiles(selectedFiles.slice(0, maxFilesPerUpload));
+                setMessage(selectedFiles.length > maxFilesPerUpload ? `Selecionei os ${maxFilesPerUpload} primeiros arquivos.` : null);
+              }}
+              type="file"
+            />
+          </label>
         ) : (
           <label>URL<input value={url} onChange={(event) => setUrl(event.target.value)} required type="url" /></label>
         )}
+        {type === "file" && files.length ? (
+          <div className="file-selection-summary">
+            <span>{files.length} de {maxFilesPerUpload} arquivos selecionados</span>
+            <small>{files.map((file) => file.name).join(", ")}</small>
+          </div>
+        ) : null}
         {message ? <p className="form-message">{message}</p> : null}
         <button className={`primary-button full ${saving ? "is-loading" : ""}`} disabled={saving} type="submit">
-          {saving ? "Salvando..." : "Salvar material"}
+          {saving ? "Salvando..." : files.length > 1 ? "Salvar materiais" : "Salvar material"}
         </button>
       </form>
     </div>

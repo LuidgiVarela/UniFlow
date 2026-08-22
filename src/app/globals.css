@@ -705,6 +705,27 @@ label {
   padding: 10px 0;
 }
 
+.file-selection-summary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 10px 11px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.file-selection-summary span {
+  color: var(--foreground);
+  font-weight: 720;
+}
+
+.file-selection-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .error-message {
   color: #ff8a8a;
 }

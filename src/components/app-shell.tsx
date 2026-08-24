@@ -91,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { demoMode, signOut, user } = useAuth();
-  const { demands, removeSubject, subjects, reorderSubjects } = useAppData();
+  const { demands, loadError, loading, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -210,7 +210,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="desktop-toggle-icon">{sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</span>
           </button>
         </header>
-        <main className="content">{children}</main>
+        <main className="content">
+          {loading ? (
+            <section className="plain-section app-loading-state">
+              <p className="eyebrow">UniFlow</p>
+              <h1>Carregando seus dados...</h1>
+              <p className="muted compact-note">Sincronizando com o Supabase.</p>
+            </section>
+          ) : loadError ? (
+            <section className="plain-section app-loading-state">
+              <p className="eyebrow">UniFlow</p>
+              <h1>Não foi possível carregar agora</h1>
+              <p className="muted compact-note">Vou tentar de novo automaticamente, mas você também pode forçar uma nova tentativa.</p>
+              <button className="primary-button small" onClick={() => void refresh(true).catch(() => undefined)} type="button">
+                Tentar novamente
+              </button>
+            </section>
+          ) : children}
+        </main>
       </div>
       <SubjectModal open={subjectOpen} onClose={() => setSubjectOpen(false)} />
       {settingsOpen ? (

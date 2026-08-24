@@ -38,6 +38,7 @@ import type {
 
 type DataContextValue = AppData & {
   loading: boolean;
+  loadError: string | null;
   refresh: (showLoading?: boolean) => Promise<void>;
   upsertSubject: (subject: Subject) => Promise<void>;
   removeSubject: (id: string) => Promise<void>;
@@ -76,11 +77,27 @@ const emptyData: AppData = {
   materialFolders: [],
 };
 
+function isCompletelyEmpty(data: AppData) {
+  return Object.values(data).every((items) => Array.isArray(items) && items.length === 0);
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
   const dataRef = useRef<AppData>(emptyData);
+  const loadedOnceRef = useRef(false);
+  const emptyRetryRef = useRef(false);
+  const retryShowLoadingRef = useRef(true);
   const mutationQueues = useRef<Record<string, Promise<void>>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
+
+  const scheduleRetry = useCallback((showLoading: boolean, delay: number) => {
+    retryShowLoadingRef.current = showLoading;
+    window.setTimeout(() => {
+      setRetryToken((current) => current + 1);
+    }, delay);
+  }, []);
 
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -88,10 +105,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const nextData = await loadAppData();
       dataRef.current = nextData;
       setData(nextData);
+      if (!loadedOnceRef.current && !emptyRetryRef.current && isCompletelyEmpty(nextData)) {
+        emptyRetryRef.current = true;
+        scheduleRetry(false, 1600);
+      }
+      loadedOnceRef.current = true;
+      setLoadError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível carregar seus dados.";
+      if (!loadedOnceRef.current) {
+        setLoadError(message);
+        if (showLoading) {
+          scheduleRetry(true, 1800);
+        }
+      }
+      throw error;
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, []);
+  }, [scheduleRetry]);
 
   function updateData(updater: (current: AppData) => AppData) {
     const nextData = updater(dataRef.current);
@@ -110,13 +142,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    void Promise.resolve().then(() => refresh());
-  }, [refresh]);
+    const showLoading = retryToken === 0 ? true : retryShowLoadingRef.current;
+    void Promise.resolve().then(() => refresh(showLoading).catch(() => undefined));
+  }, [refresh, retryToken]);
 
   const value = useMemo<DataContextValue>(
     () => ({
       ...data,
       loading,
+      loadError,
       refresh,
       async upsertSubject(subject) {
         const previousSubjects = dataRef.current.subjects;
@@ -305,7 +339,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return materialPublicUrl(material);
       },
     }),
-    [data, loading, refresh],
+    [data, loadError, loading, refresh],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

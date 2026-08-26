@@ -10,6 +10,7 @@ import {
   deleteSubject,
   deleteTopic,
   generateDemandQuestionSet,
+  getMaterialStorageUsage,
   loadAppData,
   materialPublicUrl,
   reorderMaterials as persistMaterialOrder,
@@ -35,6 +36,7 @@ import type {
   Subject,
   Topic,
 } from "@/types/domain";
+import type { MaterialStorageUsage } from "@/lib/repositories/uniflow-repository";
 
 type DataContextValue = AppData & {
   loading: boolean;
@@ -62,6 +64,7 @@ type DataContextValue = AppData & {
   reorderMaterials: (materials: Material[]) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
   getMaterialUrl: (material: Material) => Promise<string>;
+  getStorageUsage: () => Promise<MaterialStorageUsage>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -337,6 +340,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async getMaterialUrl(material) {
         return materialPublicUrl(material);
+      },
+      async getStorageUsage() {
+        return getMaterialStorageUsage();
       },
     }),
     [data, loadError, loading, refresh],

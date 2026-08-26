@@ -767,7 +767,7 @@ label {
   gap: 12px;
 }
 
-.settings-list div {
+.settings-list > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -782,6 +782,38 @@ label {
 
 .settings-list strong {
   text-align: right;
+}
+
+.settings-storage-card {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 10px 0;
+}
+
+.settings-storage-card > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-storage-card small {
+  color: var(--muted);
+}
+
+.settings-storage-bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.settings-storage-bar span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--accent);
 }
 
 .subject-page-header {

@@ -33,8 +33,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/data-provider";
+import type { MaterialStorageUsage } from "@/lib/repositories/uniflow-repository";
 import { SubjectModal } from "@/components/subject-modal";
 import type { Subject } from "@/types/domain";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 function SortableSubjectLink({
   subject,
@@ -90,9 +97,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [storageUsage, setStorageUsage] = useState<MaterialStorageUsage | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const { demoMode, signOut, user } = useAuth();
-  const { demands, loadError, loading, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
+  const { demands, getStorageUsage, loadError, loading, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
+  const storagePercent = storageUsage
+    ? Math.min(100, Math.round((storageUsage.usedBytes / storageUsage.limitBytes) * 100))
+    : 0;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
@@ -131,6 +144,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     document.title = "UniFlow";
   }, [demands, pathname, subjects]);
+
+  async function loadStorageStats() {
+    setStorageLoading(true);
+    setStorageError(null);
+    try {
+      setStorageUsage(await getStorageUsage());
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Não foi possível calcular o uso do Storage.");
+    } finally {
+      setStorageLoading(false);
+    }
+  }
+
+  function openSettings() {
+    setSettingsOpen(true);
+    void loadStorageStats();
+  }
 
   async function handleRemoveSubject(subject: Subject) {
     const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a matéria e seus dados vinculados.`);
@@ -187,7 +217,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </nav>
         <div className="sidebar-footer">
-          <button className="ghost-button" onClick={() => setSettingsOpen(true)} type="button">
+          <button className="ghost-button" onClick={openSettings} type="button">
             <Settings size={17} />
             <span>Configurações</span>
           </button>
@@ -246,6 +276,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span>Dados</span>
                 <strong>{demoMode ? "Salvos neste navegador" : "Sincronizados com Supabase"}</strong>
               </div>
+              <section className="settings-storage-card">
+                <div>
+                  <span>Arquivos enviados</span>
+                  <strong>
+                    {storageLoading && !storageUsage
+                      ? "Calculando..."
+                      : storageUsage
+                        ? `${formatBytes(storageUsage.usedBytes)} de ${formatBytes(storageUsage.limitBytes)}`
+                        : "Indisponível"}
+                  </strong>
+                </div>
+                <div className="settings-storage-bar">
+                  <span style={{ width: `${storagePercent}%` }} />
+                </div>
+                <small>
+                  {storageUsage ? `${storagePercent}% usado · ${storageUsage.fileCount} arquivos` : "Limite Free estimado: 1 GB de file storage"}
+                </small>
+                {storageError ? <small className="error-message">{storageError}</small> : null}
+              </section>
             </div>
             <button className="primary-button full" onClick={() => setSettingsOpen(false)} type="button">Fechar</button>
           </section>

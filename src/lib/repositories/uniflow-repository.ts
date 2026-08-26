@@ -14,6 +14,15 @@ import type {
 } from "@/types/domain";
 
 const DEMO_KEY = "uniflow:demo-data";
+const MATERIAL_STORAGE_BUCKET = "subject-materials";
+const MATERIAL_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
+
+export type MaterialStorageUsage = {
+  usedBytes: number;
+  limitBytes: number;
+  fileCount: number;
+  updatedAt: string;
+};
 
 function readDemoData(): AppData {
   if (typeof window === "undefined") return mockData;
@@ -491,7 +500,7 @@ export async function uploadMaterialFile(subjectId: string, file: File, name?: s
   if (!user_id) throw new Error("Usuário não autenticado.");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${user_id}/${subjectId}/${crypto.randomUUID()}/${safeName}`;
-  const upload = await supabase.storage.from("subject-materials").upload(path, file, { upsert: false });
+  const upload = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).upload(path, file, { upsert: false });
   if (upload.error) throw upload.error;
 
   return saveMaterial({
@@ -523,7 +532,7 @@ export async function deleteMaterial(material: Material) {
   }
 
   if (material.type === "file" && material.file_path) {
-    const remove = await supabase.storage.from("subject-materials").remove([material.file_path]);
+    const remove = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).remove([material.file_path]);
     if (remove.error) throw remove.error;
   }
   const { error } = await supabase.from("materials").delete().eq("id", material.id);
@@ -533,8 +542,66 @@ export async function deleteMaterial(material: Material) {
 export async function materialPublicUrl(material: Material) {
   if (material.type === "link") return material.url ?? "#";
   if (!hasSupabaseEnv || !supabase || !material.file_path) return "#";
-  const signed = await supabase.storage.from("subject-materials").createSignedUrl(material.file_path, 60 * 10);
+  const signed = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).createSignedUrl(material.file_path, 60 * 10);
   if (signed.error) throw signed.error;
   const fileName = encodeURIComponent(materialOpenFileName(material));
   return `/api/materials/open/${fileName}?source=${encodeURIComponent(signed.data.signedUrl)}`;
+}
+
+async function storagePathUsage(path: string): Promise<{ usedBytes: number; fileCount: number }> {
+  if (!supabase) return { usedBytes: 0, fileCount: 0 };
+  const limit = 1000;
+  let offset = 0;
+  let usedBytes = 0;
+  let fileCount = 0;
+
+  while (true) {
+    const { data, error } = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).list(path, {
+      limit,
+      offset,
+      sortBy: { column: "name", order: "asc" },
+    });
+    if (error) throw error;
+    const items = data ?? [];
+    if (!items.length) break;
+
+    for (const item of items) {
+      const size = Number(item.metadata?.size ?? 0);
+      if (item.id && size > 0) {
+        usedBytes += size;
+        fileCount += 1;
+        continue;
+      }
+      if (!item.id) {
+        const nested = await storagePathUsage(`${path}/${item.name}`);
+        usedBytes += nested.usedBytes;
+        fileCount += nested.fileCount;
+      }
+    }
+
+    if (items.length < limit) break;
+    offset += limit;
+  }
+
+  return { usedBytes, fileCount };
+}
+
+export async function getMaterialStorageUsage(): Promise<MaterialStorageUsage> {
+  if (!hasSupabaseEnv || !supabase) {
+    return {
+      usedBytes: 0,
+      limitBytes: MATERIAL_STORAGE_LIMIT_BYTES,
+      fileCount: 0,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const user_id = await requireUserId();
+  if (!user_id) throw new Error("Usuário não autenticado.");
+  const usage = await storagePathUsage(user_id);
+  return {
+    ...usage,
+    limitBytes: MATERIAL_STORAGE_LIMIT_BYTES,
+    updatedAt: new Date().toISOString(),
+  };
 }

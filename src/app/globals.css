@@ -1384,6 +1384,45 @@ label {
   max-width: 1040px;
 }
 
+.semester-countdown-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1fr);
+  align-items: center;
+  gap: 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, rgba(47, 125, 209, 0.12), rgba(255, 255, 255, 0.018));
+}
+
+.semester-countdown-card > div,
+.semester-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.semester-countdown-card span,
+.semester-countdown-card small {
+  color: var(--muted);
+}
+
+.semester-countdown-card strong {
+  font-size: clamp(1.25rem, 2vw, 2rem);
+  line-height: 1.05;
+}
+
+.semester-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.semester-progress > div:first-child strong {
+  font-size: 1rem;
+}
+
 .attendance-list {
   display: grid;
   gap: 12px;
@@ -1779,6 +1818,10 @@ label {
   .task-detail-grid,
   .task-generator,
   .task-stats-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .semester-countdown-card {
     grid-template-columns: 1fr;
   }
 

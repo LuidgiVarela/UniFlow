@@ -4,10 +4,13 @@ import { Minus, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import { PageHeader, Panel } from "@/components/ui";
+import { daysUntil } from "@/lib/date";
 import type { Subject } from "@/types/domain";
 
 const MIN_ATTENDANCE = 0.75;
 const ABSENCES_PER_CLASS = 2;
+const SEMESTER_START = "2026-08-10";
+const SEMESTER_END = "2026-12-14";
 
 function allowedAbsences(courseHours: number) {
   if (!courseHours) return 0;
@@ -30,6 +33,14 @@ function remainingClassDays(remainingAbsences: number) {
   return Math.max(0, Math.floor(remainingAbsences / ABSENCES_PER_CLASS));
 }
 
+function semesterElapsedPercent() {
+  const today = new Date();
+  const start = new Date(`${SEMESTER_START}T12:00:00`).getTime();
+  const end = new Date(`${SEMESTER_END}T12:00:00`).getTime();
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12).getTime();
+  return Math.min(100, Math.max(0, Math.round(((current - start) / (end - start)) * 100)));
+}
+
 export default function FaltometroPage() {
   const { subjects, upsertSubject } = useAppData();
   const [hourDrafts, setHourDrafts] = useState<Record<string, string>>({});
@@ -37,6 +48,8 @@ export default function FaltometroPage() {
     () => [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999)),
     [subjects],
   );
+  const semesterDaysLeft = Math.max(0, daysUntil(SEMESTER_END));
+  const semesterProgress = semesterElapsedPercent();
 
   async function updateSubject(subject: Subject, patch: Partial<Subject>) {
     await upsertSubject({ ...subject, ...patch });
@@ -62,6 +75,22 @@ export default function FaltometroPage() {
     <>
       <PageHeader title="Faltômetro" />
       <Panel className="plain-section attendance-panel">
+        <section className="semester-countdown-card">
+          <div>
+            <span>Semestre 2026.2</span>
+            <strong>{semesterDaysLeft ? `${semesterDaysLeft} dias restantes` : "Semestre encerrado"}</strong>
+            <small>Até 14/12/2026</small>
+          </div>
+          <div className="semester-progress">
+            <div>
+              <span>Progresso do semestre</span>
+              <strong>{semesterProgress}%</strong>
+            </div>
+            <div className="progress-track subtle">
+              <span style={{ width: `${semesterProgress}%` }} />
+            </div>
+          </div>
+        </section>
         <div className="attendance-list">
           {sortedSubjects.map((subject) => {
             const courseHours = Math.max(0, subject.total_classes ?? 0);

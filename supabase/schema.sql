@@ -88,10 +88,22 @@ create table if not exists public.topics (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.grade_components (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subject_id uuid not null references public.subjects(id) on delete cascade,
+  name text not null,
+  weight numeric,
+  expected_count integer,
+  calculation text not null default 'average' check (calculation in ('average')),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.assessments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   subject_id uuid not null references public.subjects(id) on delete cascade,
+  grade_component_id uuid references public.grade_components(id) on delete set null,
   name text not null,
   type text not null default 'prova' check (type in ('prova', 'trabalho', 'lista', 'projeto', 'seminario', 'outro')),
   date date,
@@ -102,6 +114,23 @@ create table if not exists public.assessments (
   status text not null default 'futura' check (status in ('futura', 'realizada', 'corrigida')),
   created_at timestamptz not null default now()
 );
+
+alter table public.assessments add column if not exists grade_component_id uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'assessments_grade_component_id_fkey'
+  ) then
+    alter table public.assessments
+      add constraint assessments_grade_component_id_fkey
+      foreign key (grade_component_id)
+      references public.grade_components(id)
+      on delete set null;
+  end if;
+end $$;
 
 create table if not exists public.assessment_topics (
   assessment_id uuid not null references public.assessments(id) on delete cascade,
@@ -155,6 +184,7 @@ alter table public.demands enable row level security;
 alter table public.demand_questions enable row level security;
 alter table public.demand_question_items enable row level security;
 alter table public.topics enable row level security;
+alter table public.grade_components enable row level security;
 alter table public.assessments enable row level security;
 alter table public.assessment_topics enable row level security;
 alter table public.materials enable row level security;
@@ -219,14 +249,45 @@ create policy "Users can update own topics" on public.topics for update using (a
 );
 create policy "Users can delete own topics" on public.topics for delete using (auth.uid() = user_id);
 
+create policy "Users can read own grade components" on public.grade_components for select using (auth.uid() = user_id);
+create policy "Users can insert own grade components" on public.grade_components for insert with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.subjects where subjects.id = grade_components.subject_id and subjects.user_id = auth.uid())
+);
+create policy "Users can update own grade components" on public.grade_components for update using (auth.uid() = user_id) with check (
+  auth.uid() = user_id
+  and exists (select 1 from public.subjects where subjects.id = grade_components.subject_id and subjects.user_id = auth.uid())
+);
+create policy "Users can delete own grade components" on public.grade_components for delete using (auth.uid() = user_id);
+
 create policy "Users can read own assessments" on public.assessments for select using (auth.uid() = user_id);
 create policy "Users can insert own assessments" on public.assessments for insert with check (
   auth.uid() = user_id
   and exists (select 1 from public.subjects where subjects.id = assessments.subject_id and subjects.user_id = auth.uid())
+  and (
+    grade_component_id is null
+    or exists (
+      select 1
+      from public.grade_components
+      where grade_components.id = assessments.grade_component_id
+        and grade_components.user_id = auth.uid()
+        and grade_components.subject_id = assessments.subject_id
+    )
+  )
 );
 create policy "Users can update own assessments" on public.assessments for update using (auth.uid() = user_id) with check (
   auth.uid() = user_id
   and exists (select 1 from public.subjects where subjects.id = assessments.subject_id and subjects.user_id = auth.uid())
+  and (
+    grade_component_id is null
+    or exists (
+      select 1
+      from public.grade_components
+      where grade_components.id = assessments.grade_component_id
+        and grade_components.user_id = auth.uid()
+        and grade_components.subject_id = assessments.subject_id
+    )
+  )
 );
 create policy "Users can delete own assessments" on public.assessments for delete using (auth.uid() = user_id);
 
@@ -290,7 +351,10 @@ create index if not exists demands_user_id_due_date_idx on public.demands(user_i
 create index if not exists demand_questions_demand_id_idx on public.demand_questions(demand_id);
 create index if not exists demand_question_items_question_id_idx on public.demand_question_items(question_id);
 create index if not exists topics_subject_id_idx on public.topics(subject_id);
+create index if not exists grade_components_subject_id_idx on public.grade_components(subject_id);
+create index if not exists grade_components_user_id_subject_id_idx on public.grade_components(user_id, subject_id);
 create index if not exists assessments_subject_id_idx on public.assessments(subject_id);
+create index if not exists assessments_grade_component_id_idx on public.assessments(grade_component_id);
 create index if not exists assessments_user_id_date_idx on public.assessments(user_id, date);
 create index if not exists assessment_topics_topic_id_idx on public.assessment_topics(topic_id);
 create index if not exists materials_subject_id_idx on public.materials(subject_id);

@@ -6,6 +6,7 @@ import { PageHeader, Panel } from "@/components/ui";
 import { useAppData } from "@/components/data-provider";
 import { assessmentDaysText } from "@/lib/academic";
 import { daysUntil, formatDate, toIsoDate } from "@/lib/date";
+import { isAssessmentUpcoming } from "@/lib/grades";
 import { demandTypeLabels } from "@/lib/labels";
 import { sortDemandsByPriorityAndDate } from "@/lib/priority";
 
@@ -17,7 +18,7 @@ export default function Home() {
   const datedDemands = sortDemandsByPriorityAndDate(openDemands.filter((demand) => demand.due_date)).slice(0, 10);
   const undatedDemands = sortDemandsByPriorityAndDate(openDemands.filter((demand) => !demand.due_date));
   const upcomingAssessments = assessments
-    .filter((assessment) => assessment.status === "futura" && assessment.date)
+    .filter((assessment) => isAssessmentUpcoming(assessment) && assessment.date)
     .sort((a, b) => new Date(`${a.date}T12:00:00`).getTime() - new Date(`${b.date}T12:00:00`).getTime());
 
   function subjectFor(id: string) {

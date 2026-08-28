@@ -7,29 +7,31 @@ import { useAppData } from "@/components/data-provider";
 import { EmptyState, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText } from "@/lib/academic";
 import { formatDate } from "@/lib/date";
-import { assessmentWeightText, calculateWeightedAverage } from "@/lib/grades";
+import { assessmentWeightText, calculateKnownGradeAverage, calculateWeightedAverage, isAssessmentUpcoming } from "@/lib/grades";
 import { assessmentStatusLabels, assessmentTypeLabels } from "@/lib/labels";
 import type { Assessment } from "@/types/domain";
 
 export default function NotesPage() {
-  const { subjects, assessments, removeAssessment } = useAppData();
+  const { subjects, gradeComponents, assessments, removeAssessment } = useAppData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Assessment | null>(null);
 
   const upcoming = assessments
-    .filter((assessment) => assessment.status === "futura")
+    .filter(isAssessmentUpcoming)
     .sort((a, b) => new Date(`${a.date ?? "2999-12-31"}T12:00:00`).getTime() - new Date(`${b.date ?? "2999-12-31"}T12:00:00`).getTime());
   const results = assessments
-    .filter((assessment) => assessment.status !== "futura")
+    .filter((assessment) => !isAssessmentUpcoming(assessment))
     .sort((a, b) => new Date(`${b.date ?? "1900-01-01"}T12:00:00`).getTime() - new Date(`${a.date ?? "1900-01-01"}T12:00:00`).getTime());
 
   const averages = useMemo(
     () =>
       subjects.map((subject) => {
         const items = assessments.filter((assessment) => assessment.subject_id === subject.id);
-        return { subject, average: calculateWeightedAverage(items) };
+        const components = gradeComponents.filter((component) => component.subject_id === subject.id);
+        const average = components.length ? calculateKnownGradeAverage(components, items) : calculateWeightedAverage(items);
+        return { subject, average };
       }),
-    [assessments, subjects],
+    [assessments, gradeComponents, subjects],
   );
 
   function subjectFor(id: string) {

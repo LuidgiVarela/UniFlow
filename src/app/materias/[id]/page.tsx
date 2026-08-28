@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
 import { useAppData } from "@/components/data-provider";
+import { GradeCriteriaManager } from "@/components/grade-criteria-manager";
 import { MaterialModal } from "@/components/material-modal";
 import { SubjectModal } from "@/components/subject-modal";
 import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
@@ -15,7 +16,7 @@ import { EmptyState, Panel, StatusPill } from "@/components/ui";
 import { assessmentDaysText, nextAssessment, topicProgress } from "@/lib/academic";
 import { formatDate } from "@/lib/date";
 import { supportsQuestionDashboard } from "@/lib/demands";
-import { assessmentWeightText, calculateWeightedAverage } from "@/lib/grades";
+import { assessmentWeightText, isAssessmentUpcoming } from "@/lib/grades";
 import {
   assessmentStatusLabels,
   assessmentTypeLabels,
@@ -157,9 +158,8 @@ export default function SubjectDetailPage() {
   const upcomingAssessment = nextAssessment(assessments, subject.id);
   const nextTask = subjectDemands.find((demand) => demand.status !== "concluido") ?? null;
   const progress = topicProgress(subjectTopics);
-  const upcomingAssessments = subjectAssessments.filter((assessment) => assessment.status === "futura");
-  const completedAssessments = subjectAssessments.filter((assessment) => assessment.status !== "futura");
-  const gradedAssessments = subjectAssessments.filter((assessment) => assessment.score !== null && assessment.max_score);
+  const upcomingAssessments = subjectAssessments.filter(isAssessmentUpcoming);
+  const completedAssessments = subjectAssessments.filter((assessment) => !isAssessmentUpcoming(assessment));
   const subjectMaterials = materials.filter((material) => material.subject_id === subject.id).sort(sortMaterials);
   const subjectFolders = materialFolders
     .filter((folder) => folder.subject_id === subject.id)
@@ -170,7 +170,6 @@ export default function SubjectDetailPage() {
   const activeMaterials = activeFolderId
     ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
     : [];
-  const gradeAverage = calculateWeightedAverage(gradedAssessments);
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -490,20 +489,7 @@ export default function SubjectDetailPage() {
 
       {tab === "grades" ? (
         <Panel className="plain-section">
-          <h2>Notas</h2>
-          <div className="quiet-list">
-            {gradedAssessments.map((assessment) => (
-              <article className="simple-row" key={assessment.id}>
-                <strong>{assessment.name}</strong>
-                <small>{assessment.score} / {assessment.max_score}</small>
-              </article>
-            ))}
-            {!gradedAssessments.length ? <p className="muted compact-note">Nenhuma nota ainda.</p> : null}
-          </div>
-          <div className="partial-average">
-            <span>Média parcial</span>
-            <strong>{gradeAverage === null ? "Sem cálculo definido" : gradeAverage.toFixed(1)}</strong>
-          </div>
+          <GradeCriteriaManager assessments={subjectAssessments} subjectId={subject.id} />
         </Panel>
       ) : null}
 

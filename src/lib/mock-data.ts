@@ -83,6 +83,7 @@ export const mockData: AppData = {
     { id: "top-2", subject_id: "sub-sstd", title: "Sistemas LTI", status: "estudando", order_index: 2 },
     { id: "top-3", subject_id: "sub-sstd", title: "Convolução", status: "nao_iniciado", order_index: 3 },
   ],
+  gradeComponents: [],
   assessments: [
     {
       id: "ass-1",

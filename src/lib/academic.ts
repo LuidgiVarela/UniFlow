@@ -1,4 +1,5 @@
 import { daysUntil } from "@/lib/date";
+import { isAssessmentUpcoming } from "@/lib/grades";
 import type { Assessment, Topic } from "@/types/domain";
 
 export function topicProgress(topics: Topic[]) {
@@ -10,7 +11,7 @@ export function topicProgress(topics: Topic[]) {
 
 export function nextAssessment(assessments: Assessment[], subjectId?: string) {
   const items = assessments
-    .filter((assessment) => assessment.status === "futura" && assessment.date)
+    .filter((assessment) => isAssessmentUpcoming(assessment) && assessment.date)
     .filter((assessment) => !subjectId || assessment.subject_id === subjectId)
     .sort((a, b) => new Date(`${a.date}T12:00:00`).getTime() - new Date(`${b.date}T12:00:00`).getTime());
   return items[0] ?? null;

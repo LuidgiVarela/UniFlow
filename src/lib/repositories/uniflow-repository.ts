@@ -7,6 +7,7 @@ import type {
   Demand,
   DemandQuestion,
   DemandQuestionItem,
+  GradeComponent,
   Material,
   MaterialFolder,
   Subject,
@@ -38,6 +39,7 @@ function readDemoData(): AppData {
     demandQuestions: parsed.demandQuestions ?? [],
     demandQuestionItems: parsed.demandQuestionItems ?? [],
     topics: parsed.topics ?? [],
+    gradeComponents: parsed.gradeComponents ?? [],
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
     materials: parsed.materials ?? [],
@@ -67,6 +69,7 @@ export async function loadAppData(): Promise<AppData> {
     demandQuestions,
     demandQuestionItems,
     topics,
+    gradeComponents,
     assessments,
     assessmentTopics,
     materials,
@@ -77,6 +80,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("demand_questions").select("*").order("order_index"),
     supabase.from("demand_question_items").select("*").order("order_index"),
     supabase.from("topics").select("*").order("order_index"),
+    supabase.from("grade_components").select("*").order("created_at"),
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
@@ -93,6 +97,7 @@ export async function loadAppData(): Promise<AppData> {
     demandQuestions: demandQuestions.error ? [] : demandQuestions.data ?? [],
     demandQuestionItems: demandQuestionItems.error ? [] : demandQuestionItems.data ?? [],
     topics: topics.data ?? [],
+    gradeComponents: gradeComponents.error ? [] : gradeComponents.data ?? [],
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
     materials: materials.data ?? [],
@@ -154,6 +159,7 @@ export async function deleteSubject(id: string) {
     data.demandQuestionItems = data.demandQuestionItems.filter((item) => questionIds.includes(item.question_id));
     data.topics = data.topics.filter((item) => item.subject_id !== id);
     data.assessments = data.assessments.filter((item) => item.subject_id !== id);
+    data.gradeComponents = data.gradeComponents.filter((item) => item.subject_id !== id);
     data.assessmentTopics = data.assessmentTopics.filter((item) =>
       data.assessments.some((assessment) => assessment.id === item.assessment_id),
     );
@@ -404,6 +410,42 @@ export async function saveAssessment(assessment: Assessment, topicIds?: string[]
     }
   }
   return data as Assessment;
+}
+
+export async function saveGradeComponent(component: GradeComponent) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.gradeComponents.some((item) => item.id === component.id);
+    data.gradeComponents = exists
+      ? data.gradeComponents.map((item) => (item.id === component.id ? component : item))
+      : [...data.gradeComponents, component];
+    writeDemoData(data);
+    return component;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("grade_components")
+    .upsert({ ...component, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as GradeComponent;
+}
+
+export async function deleteGradeComponent(id: string) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    data.gradeComponents = data.gradeComponents.filter((item) => item.id !== id);
+    data.assessments = data.assessments.map((item) =>
+      item.grade_component_id === id ? { ...item, grade_component_id: null } : item,
+    );
+    writeDemoData(data);
+    return;
+  }
+
+  const { error } = await supabase.from("grade_components").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function deleteAssessment(id: string) {

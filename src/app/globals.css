@@ -1760,6 +1760,94 @@ label {
   color: var(--muted);
 }
 
+.grade-manager {
+  display: grid;
+  gap: 14px;
+}
+
+.grade-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.grade-summary-grid article,
+.grade-component-card {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.grade-summary-grid article {
+  display: grid;
+  gap: 6px;
+  padding: 13px;
+}
+
+.grade-summary-grid span,
+.grade-summary-grid small,
+.grade-component-card small {
+  color: var(--muted);
+}
+
+.grade-summary-grid strong {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.grade-component-list {
+  display: grid;
+  gap: 10px;
+}
+
+.grade-component-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.grade-component-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, auto) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.grade-component-header > div:first-child,
+.grade-component-score {
+  display: grid;
+  gap: 4px;
+}
+
+.grade-component-score {
+  text-align: right;
+}
+
+.grade-component-score strong {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.grade-mini-list {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.grade-mini-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 30px;
+}
+
+.grade-mini-list span {
+  overflow-wrap: anywhere;
+  font-weight: 720;
+}
+
 .materials-grid span {
   padding: 9px 11px;
   border: 1px dashed var(--line);
@@ -1815,6 +1903,8 @@ label {
   .dashboard-grid,
   .week-grid,
   .form-grid,
+  .grade-summary-grid,
+  .grade-component-header,
   .task-detail-grid,
   .task-generator,
   .task-stats-panel {
@@ -1833,6 +1923,7 @@ label {
 
   .demand-row,
   .assessment-row,
+  .grade-mini-list article,
   .topic-row,
   .question-card-header,
   .simple-row,

@@ -13,6 +13,7 @@ export type DemandQuestionDifficulty = "facil" | "media" | "dificil";
 export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
+export type GradeComponentCalculation = "average";
 
 export type Subject = {
   id: string;
@@ -88,6 +89,7 @@ export type Assessment = {
   id: string;
   user_id?: string;
   subject_id: string;
+  grade_component_id?: string | null;
   name: string;
   type: AssessmentType;
   date: string | null;
@@ -96,6 +98,17 @@ export type Assessment = {
   score: number | null;
   description?: string | null;
   status: AssessmentStatus;
+  created_at: string;
+};
+
+export type GradeComponent = {
+  id: string;
+  user_id?: string;
+  subject_id: string;
+  name: string;
+  weight: number | null;
+  expected_count: number | null;
+  calculation: GradeComponentCalculation;
   created_at: string;
 };
 
@@ -135,6 +148,7 @@ export type AppData = {
   demandQuestions: DemandQuestion[];
   demandQuestionItems: DemandQuestionItem[];
   topics: Topic[];
+  gradeComponents: GradeComponent[];
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];
   materials: Material[];

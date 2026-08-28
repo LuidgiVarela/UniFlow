@@ -5,6 +5,7 @@ import {
   deleteAssessment,
   deleteDemand,
   deleteDemandQuestionItem,
+  deleteGradeComponent,
   deleteMaterialFolder,
   deleteMaterial,
   deleteSubject,
@@ -19,6 +20,7 @@ import {
   saveDemand,
   saveDemandQuestion,
   saveDemandQuestionItem,
+  saveGradeComponent,
   saveMaterial,
   saveMaterialFolder,
   saveSubject,
@@ -31,6 +33,7 @@ import type {
   Demand,
   DemandQuestion,
   DemandQuestionItem,
+  GradeComponent,
   Material,
   MaterialFolder,
   Subject,
@@ -56,6 +59,8 @@ type DataContextValue = AppData & {
   removeTopic: (id: string) => Promise<void>;
   upsertAssessment: (assessment: Assessment, topicIds?: string[]) => Promise<void>;
   removeAssessment: (id: string) => Promise<void>;
+  upsertGradeComponent: (component: GradeComponent) => Promise<void>;
+  removeGradeComponent: (id: string) => Promise<void>;
   upsertMaterial: (material: Material) => Promise<void>;
   upsertMaterialFolder: (folder: MaterialFolder) => Promise<void>;
   removeMaterialFolder: (id: string) => Promise<void>;
@@ -74,6 +79,7 @@ const emptyData: AppData = {
   demandQuestions: [],
   demandQuestionItems: [],
   topics: [],
+  gradeComponents: [],
   assessments: [],
   assessmentTopics: [],
   materials: [],
@@ -295,6 +301,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async removeAssessment(id) {
         await deleteAssessment(id);
+        await refresh(false);
+      },
+      async upsertGradeComponent(component) {
+        await saveGradeComponent(component);
+        await refresh(false);
+      },
+      async removeGradeComponent(id) {
+        await deleteGradeComponent(id);
         await refresh(false);
       },
       async upsertMaterial(material) {

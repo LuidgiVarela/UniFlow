@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import {
   assessmentWeightText,
+  calculateEvaluatedGradeWeight,
   calculateGradeContribution,
   calculateKnownGradeAverage,
   calculateWeightedAverage,
@@ -64,6 +65,7 @@ export function GradeCriteriaManager({
   const directAverage = calculateWeightedAverage(uncategorized);
   const knownAverage = calculateKnownGradeAverage(subjectComponents, assessments);
   const contribution = calculateGradeContribution(subjectComponents, assessments);
+  const evaluatedWeight = calculateEvaluatedGradeWeight(subjectComponents, assessments);
 
   function openComponentModal(component?: GradeComponent) {
     setForm(component ?? createBlankComponent(subjectId));
@@ -107,7 +109,7 @@ export function GradeCriteriaManager({
 
       <section className="grade-summary-grid">
         <article>
-          <span>Média parcial ponderada</span>
+          <span>Média das notas lançadas</span>
           <strong>{knownAverage === null ? "Sem cálculo" : knownAverage.toFixed(1)}</strong>
         </article>
         <article>
@@ -115,8 +117,8 @@ export function GradeCriteriaManager({
           <strong>{contribution ? contribution.toFixed(2) : "0.00"}</strong>
         </article>
         <article>
-          <span>Notas registradas</span>
-          <strong>{gradedAssessments.length}</strong>
+          <span>Peso já avaliado</span>
+          <strong>{evaluatedWeight ? `${evaluatedWeight.toFixed(evaluatedWeight % 1 === 0 ? 0 : 2)}%` : "0%"}</strong>
         </article>
       </section>
 
@@ -135,7 +137,11 @@ export function GradeCriteriaManager({
               </div>
               <div className="grade-component-score">
                 <strong>{summary.average === null ? "--" : summary.average.toFixed(1)}</strong>
-                <small>{summary.contribution === null ? "sem contribuição" : `${summary.contribution.toFixed(2)} ponto(s)`}</small>
+                <small>
+                  {summary.contribution === null
+                    ? "sem contribuição"
+                    : `${summary.contribution.toFixed(2)} ponto(s) em ${summary.evaluatedWeight.toFixed(summary.evaluatedWeight % 1 === 0 ? 0 : 2)}%`}
+                </small>
               </div>
               <div className="row-actions">
                 <button className="icon-button" onClick={() => openComponentModal(summary.component)} title="Editar critério" type="button">

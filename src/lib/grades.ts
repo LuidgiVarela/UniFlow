@@ -38,6 +38,7 @@ export type GradeComponentSummary = {
   gradedAssessments: Assessment[];
   average: number | null;
   contribution: number | null;
+  evaluatedWeight: number;
   hasMissingWeights: boolean;
 };
 
@@ -56,7 +57,20 @@ export function summarizeGradeComponent(component: GradeComponent, assessments: 
     component.calculation === "weighted"
       ? totalInnerWeight ? weightedScoreSum / totalInnerWeight : null
       : gradedAssessments.length ? scoreSum / gradedAssessments.length : null;
-  const contribution = average !== null && component.weight !== null ? (average * component.weight) / 100 : null;
+  const evaluatedWeight =
+    component.weight === null
+      ? 0
+      : component.calculation === "weighted"
+        ? (component.weight * Math.min(totalInnerWeight, 100)) / 100
+        : component.expected_count
+          ? (component.weight * Math.min(gradedAssessments.length / component.expected_count, 1))
+          : average === null
+            ? 0
+            : component.weight;
+  const contribution =
+    average !== null && evaluatedWeight
+      ? (average * evaluatedWeight) / 100
+      : null;
 
   return {
     component,
@@ -64,6 +78,7 @@ export function summarizeGradeComponent(component: GradeComponent, assessments: 
     gradedAssessments,
     average,
     contribution,
+    evaluatedWeight,
     hasMissingWeights,
   };
 }
@@ -84,17 +99,20 @@ export function calculateGradeContribution(components: GradeComponent[], assessm
   return componentContribution + directContribution;
 }
 
-export function calculateKnownGradeAverage(components: GradeComponent[], assessments: Assessment[]) {
-  const summaries = summarizeGradeComponents(components, assessments);
-  const componentWeight = summaries.reduce(
-    (sum, summary) => sum + (summary.average !== null ? summary.component.weight ?? 0 : 0),
+export function calculateEvaluatedGradeWeight(components: GradeComponent[], assessments: Assessment[]) {
+  const componentWeight = summarizeGradeComponents(components, assessments).reduce(
+    (sum, summary) => sum + summary.evaluatedWeight,
     0,
   );
-  const directItems = assessments.filter(
-    (assessment) => !assessment.grade_component_id && isAssessmentGraded(assessment) && assessment.weight !== null,
-  );
-  const directWeight = directItems.reduce((sum, assessment) => sum + (assessment.weight ?? 0), 0);
-  const totalWeight = componentWeight + directWeight;
+  const directWeight = assessments
+    .filter((assessment) => !assessment.grade_component_id && isAssessmentGraded(assessment) && assessment.weight !== null)
+    .reduce((sum, assessment) => sum + (assessment.weight ?? 0), 0);
+
+  return componentWeight + directWeight;
+}
+
+export function calculateKnownGradeAverage(components: GradeComponent[], assessments: Assessment[]) {
+  const totalWeight = calculateEvaluatedGradeWeight(components, assessments);
   if (!totalWeight) return null;
 
   const contribution = calculateGradeContribution(components, assessments);

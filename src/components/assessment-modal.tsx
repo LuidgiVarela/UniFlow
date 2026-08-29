@@ -122,8 +122,8 @@ export function AssessmentModal({
             <label>{selectedGradeComponent ? "Peso dentro do critério" : "Peso (%)"}<input type="number" step="0.01" value={form.weight ?? ""} onChange={(e) => setForm({ ...form, weight: e.target.value ? Number(e.target.value) : null })} /></label>
           ) : (
             <div className="field-note">
-              <span>Peso controlado pelo critério</span>
-              <strong>{selectedGradeComponent.weight === null ? "Sem peso definido" : `${selectedGradeComponent.weight}% da nota`}</strong>
+              <span>Incluso no critério</span>
+              <strong>{selectedGradeComponent.weight === null ? "Sem peso definido" : `${selectedGradeComponent.name} vale ${selectedGradeComponent.weight}% da nota`}</strong>
             </div>
           )}
         </div>

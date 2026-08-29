@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Check, Edit, Trash2 } from "lucide-react";
+import { DemandDescriptionPreview } from "@/components/demand-description-preview";
 import { DemandModal } from "@/components/demand-modal";
 import { useAppData } from "@/components/data-provider";
 import { PageHeader, Panel, StatusPill } from "@/components/ui";
@@ -66,6 +67,7 @@ export default function DemandsPage() {
                     {demand.due_date ? <span>{formatDate(demand.due_date)}</span> : null}
                     <span>{demandStatusLabels[demand.status]}</span>
                   </div>
+                  <DemandDescriptionPreview description={demand.description} />
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
                 <div className="row-actions">

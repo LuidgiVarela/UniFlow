@@ -1,6 +1,7 @@
 "use client";
 
 import { PageHeader, Panel } from "@/components/ui";
+import { DemandDescriptionPreview } from "@/components/demand-description-preview";
 import { useAppData } from "@/components/data-provider";
 import { formatDate, toIsoDate, weekDays } from "@/lib/date";
 import { demandTypeLabels } from "@/lib/labels";
@@ -37,6 +38,7 @@ export default function WeekPage() {
                       <strong style={{ color: subject?.color }}>{subject?.code}</strong>
                       <span>{demand.title}</span>
                       <small>{demandTypeLabels[demand.type]}</small>
+                      <DemandDescriptionPreview description={demand.description} />
                     </article>
                   );
                 })}

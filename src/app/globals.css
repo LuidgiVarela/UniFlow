@@ -445,6 +445,20 @@ h3 {
   color: var(--muted);
 }
 
+.demand-description-preview {
+  max-width: min(720px, 100%);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  border-left: 2px solid var(--line);
+  padding-left: 9px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .demand-row small,
 .assessment-row small,
 .simple-row small,

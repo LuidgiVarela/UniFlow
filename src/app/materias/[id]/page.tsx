@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
+import { DemandDescriptionPreview } from "@/components/demand-description-preview";
 import { useAppData } from "@/components/data-provider";
 import { GradeCriteriaManager } from "@/components/grade-criteria-manager";
 import { MaterialModal } from "@/components/material-modal";
@@ -395,6 +396,7 @@ export default function SubjectDetailPage() {
                 <div className="line-block">
                   <strong>{nextTask.title}</strong>
                   <small>{[nextTask.due_date ? formatDate(nextTask.due_date) : null, demandTypeLabels[nextTask.type]].filter(Boolean).join(" - ")}</small>
+                  <DemandDescriptionPreview description={nextTask.description} />
                   <TaskProgress demand={nextTask} progress={getDetailedTaskProgress(nextTask, demandQuestions, demandQuestionItems)} />
                 </div>
               ) : <p className="muted compact-note">Nenhuma tarefa pendente.</p>}
@@ -446,6 +448,7 @@ export default function SubjectDetailPage() {
                     <strong className="task-title-static">{demand.title}</strong>
                   )}
                   <small>{[demand.due_date ? formatDate(demand.due_date) : null, demandTypeLabels[demand.type], demandStatusLabels[demand.status]].filter(Boolean).join(" - ")}</small>
+                  <DemandDescriptionPreview description={demand.description} />
                   <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>

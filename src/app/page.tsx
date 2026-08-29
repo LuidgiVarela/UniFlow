@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DemandDescriptionPreview } from "@/components/demand-description-preview";
 import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
 import { PageHeader, Panel } from "@/components/ui";
 import { useAppData } from "@/components/data-provider";
@@ -41,6 +42,7 @@ export default function Home() {
                   <div>
                     <strong>{item.title}</strong>
                     <small>{demandTypeLabels[item.type]}</small>
+                    <DemandDescriptionPreview description={item.description} />
                     <TaskProgress demand={item} progress={getDetailedTaskProgress(item, demandQuestions, demandQuestionItems)} />
                   </div>
                 </Link>
@@ -63,6 +65,7 @@ export default function Home() {
                 <div>
                   <strong>{demand.title}</strong>
                   <small>{demandTypeLabels[demand.type]}</small>
+                  <DemandDescriptionPreview description={demand.description} />
                   <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                 </div>
                 <small>{days === 0 ? "hoje" : days < 0 ? `${Math.abs(days)}d atrasado` : `${days}d`}</small>
@@ -84,6 +87,7 @@ export default function Home() {
                   <div>
                     <strong>{demand.title}</strong>
                     <small>{demandTypeLabels[demand.type]}</small>
+                    <DemandDescriptionPreview description={demand.description} />
                     <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                   </div>
                 </Link>

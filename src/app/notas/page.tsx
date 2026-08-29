@@ -40,6 +40,7 @@ export default function NotesPage() {
 
   function assessmentLine(assessment: Assessment, result = false) {
     const subject = subjectFor(assessment.subject_id);
+    const gradeComponent = gradeComponents.find((component) => component.id === assessment.grade_component_id) ?? null;
     return (
       <article className="assessment-row" key={assessment.id}>
         <span className="subject-chip" style={{ borderColor: subject?.color }}>{subject?.code}</span>
@@ -48,7 +49,7 @@ export default function NotesPage() {
           <div className="demand-meta">
             <span>{assessmentTypeLabels[assessment.type]}</span>
             <span>{formatDate(assessment.date)}</span>
-            {assessmentWeightText(assessment) ? <span>{assessmentWeightText(assessment)}</span> : null}
+            {assessmentWeightText(assessment, gradeComponent) ? <span>{assessmentWeightText(assessment, gradeComponent)}</span> : null}
             <span>{result ? `Nota ${assessment.score ?? "-"} / ${assessment.max_score ?? "-"}` : assessmentDaysText(assessment)}</span>
           </div>
         </div>

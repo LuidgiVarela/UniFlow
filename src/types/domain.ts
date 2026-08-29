@@ -13,7 +13,7 @@ export type DemandQuestionDifficulty = "facil" | "media" | "dificil";
 export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
-export type GradeComponentCalculation = "average";
+export type GradeComponentCalculation = "average" | "weighted";
 
 export type Subject = {
   id: string;

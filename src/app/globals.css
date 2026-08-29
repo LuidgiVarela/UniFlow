@@ -658,6 +658,27 @@ label {
   font-weight: 650;
 }
 
+.field-note {
+  min-height: 40px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.012);
+  padding: 8px 11px;
+}
+
+.field-note span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.field-note strong {
+  font-size: 0.86rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -774,6 +795,10 @@ label {
 
 .error-message {
   color: #ff8a8a;
+}
+
+.warning-text {
+  color: #f5be5c !important;
 }
 
 .settings-list {

@@ -62,6 +62,7 @@ export default function SubjectDetailPage() {
     demandQuestions,
     assessments,
     assessmentTopics,
+    gradeComponents,
     materialFolders,
     materials,
     topics,
@@ -181,12 +182,13 @@ export default function SubjectDetailPage() {
   }
 
   function renderAssessment(assessment: Assessment, result = false) {
+    const gradeComponent = gradeComponents.find((component) => component.id === assessment.grade_component_id) ?? null;
     return (
       <article className="simple-row assessment-list-row" key={assessment.id}>
         <div className="demand-main">
           <strong>{assessment.name}</strong>
           <div className="demand-meta">
-            {[assessmentTypeLabels[assessment.type], formatDate(assessment.date), assessmentWeightText(assessment)].filter(Boolean).map((item) => (
+            {[assessmentTypeLabels[assessment.type], formatDate(assessment.date), assessmentWeightText(assessment, gradeComponent)].filter(Boolean).map((item) => (
               <span key={item}>{item}</span>
             ))}
           </div>

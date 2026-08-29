@@ -70,6 +70,8 @@ export function AssessmentModal({
     () => gradeComponents.filter((component) => component.subject_id === form.subject_id),
     [form.subject_id, gradeComponents],
   );
+  const selectedGradeComponent = availableGradeComponents.find((component) => component.id === form.grade_component_id) ?? null;
+  const showAssessmentWeight = !selectedGradeComponent || selectedGradeComponent.calculation === "weighted";
 
   if (!open) return null;
 
@@ -116,7 +118,14 @@ export function AssessmentModal({
         </select></label>
         <div className="form-grid">
           <label>Data<input type="date" value={form.date ?? ""} onChange={(e) => setForm({ ...form, date: e.target.value || null })} /></label>
-          <label>Peso (%)<input type="number" step="0.01" value={form.weight ?? ""} onChange={(e) => setForm({ ...form, weight: e.target.value ? Number(e.target.value) : null })} /></label>
+          {showAssessmentWeight ? (
+            <label>{selectedGradeComponent ? "Peso dentro do critério" : "Peso (%)"}<input type="number" step="0.01" value={form.weight ?? ""} onChange={(e) => setForm({ ...form, weight: e.target.value ? Number(e.target.value) : null })} /></label>
+          ) : (
+            <div className="field-note">
+              <span>Peso controlado pelo critério</span>
+              <strong>{selectedGradeComponent.weight === null ? "Sem peso definido" : `${selectedGradeComponent.weight}% da nota`}</strong>
+            </div>
+          )}
         </div>
         <div className="form-grid">
           <label>Nota máxima<input type="number" step="0.01" value={form.max_score ?? ""} onChange={(e) => setForm({ ...form, max_score: e.target.value ? Number(e.target.value) : null })} /></label>

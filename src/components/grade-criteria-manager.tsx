@@ -12,7 +12,12 @@ import {
   summarizeGradeComponents,
 } from "@/lib/grades";
 import { formatDate } from "@/lib/date";
-import type { Assessment, GradeComponent } from "@/types/domain";
+import type { Assessment, GradeComponent, GradeComponentCalculation } from "@/types/domain";
+
+const calculationLabels: Record<GradeComponentCalculation, string> = {
+  average: "Média simples",
+  weighted: "Peso individual",
+};
 
 function createBlankComponent(subjectId: string): GradeComponent {
   return {
@@ -125,6 +130,8 @@ export function GradeCriteriaManager({
                   {summary.component.weight === null ? "Peso não definido" : `${summary.component.weight}% da nota`}
                   {summary.component.expected_count ? ` - ${summary.gradedAssessments.length} de ${summary.component.expected_count} lançadas` : ""}
                 </small>
+                <small>{calculationLabels[summary.component.calculation]}</small>
+                {summary.hasMissingWeights ? <small className="warning-text">Há nota sem peso dentro do critério.</small> : null}
               </div>
               <div className="grade-component-score">
                 <strong>{summary.average === null ? "--" : summary.average.toFixed(1)}</strong>
@@ -144,7 +151,7 @@ export function GradeCriteriaManager({
                 summary.assessments.map((assessment) => (
                   <article key={assessment.id}>
                     <span>{assessment.name}</span>
-                    <small>{formatDate(assessment.date)}</small>
+                    <small>{[formatDate(assessment.date), assessmentWeightText(assessment, summary.component)].filter(Boolean).join(" - ")}</small>
                     <strong>{isAssessmentGraded(assessment) ? scoreText(assessment) : "sem nota"}</strong>
                   </article>
                 ))
@@ -196,7 +203,13 @@ export function GradeCriteriaManager({
               <label>Peso total (%)<input min="0" step="0.01" type="number" value={form.weight ?? ""} onChange={(event) => setForm({ ...form, weight: event.target.value ? Number(event.target.value) : null })} placeholder="Opcional" /></label>
               <label>Quantidade prevista<input min="0" step="1" type="number" value={form.expected_count ?? ""} onChange={(event) => setForm({ ...form, expected_count: event.target.value ? Number(event.target.value) : null })} placeholder="Opcional" /></label>
             </div>
-            <p className="muted compact-note">Por enquanto o UniFlow calcula esse critério pela média simples das avaliações vinculadas.</p>
+            <label>Como calcular dentro do critério<select value={form.calculation} onChange={(event) => setForm({ ...form, calculation: event.target.value as GradeComponentCalculation })}>
+              <option value="average">Média simples</option>
+              <option value="weighted">Peso individual</option>
+            </select></label>
+            <p className="muted compact-note">
+              Média simples divide as avaliações igualmente. Peso individual usa o peso de cada avaliação apenas dentro deste critério.
+            </p>
             {error ? <p className="form-message error-message">{error}</p> : null}
             <button className={`primary-button full ${saving ? "is-loading" : ""}`} disabled={saving} type="submit">
               {saving ? "Salvando..." : "Salvar critério"}

@@ -95,7 +95,7 @@ create table if not exists public.grade_components (
   name text not null,
   weight numeric,
   expected_count integer,
-  calculation text not null default 'average' check (calculation in ('average')),
+  calculation text not null default 'average' check (calculation in ('average', 'weighted')),
   created_at timestamptz not null default now()
 );
 

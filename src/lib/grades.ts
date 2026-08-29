@@ -1,7 +1,10 @@
 import type { Assessment, GradeComponent } from "@/types/domain";
 
-export function assessmentWeightText(assessment: Assessment) {
-  return assessment.weight === null ? null : `Peso ${assessment.weight}%`;
+export function assessmentWeightText(assessment: Assessment, component?: GradeComponent | null) {
+  if (assessment.weight === null) return null;
+  if (component?.calculation === "average") return null;
+  if (component?.calculation === "weighted") return `Peso no critério ${assessment.weight}%`;
+  return `Peso ${assessment.weight}%`;
 }
 
 export function isAssessmentGraded(assessment: Assessment) {
@@ -35,13 +38,24 @@ export type GradeComponentSummary = {
   gradedAssessments: Assessment[];
   average: number | null;
   contribution: number | null;
+  hasMissingWeights: boolean;
 };
 
 export function summarizeGradeComponent(component: GradeComponent, assessments: Assessment[]): GradeComponentSummary {
   const componentAssessments = assessments.filter((assessment) => assessment.grade_component_id === component.id);
   const gradedAssessments = componentAssessments.filter(isAssessmentGraded);
+  const weightedItems = gradedAssessments.filter((assessment) => assessment.weight !== null);
+  const totalInnerWeight = weightedItems.reduce((sum, assessment) => sum + (assessment.weight ?? 0), 0);
+  const hasMissingWeights = component.calculation === "weighted" && gradedAssessments.some((assessment) => assessment.weight === null);
   const scoreSum = gradedAssessments.reduce((sum, assessment) => sum + (assessmentScoreOnTen(assessment) ?? 0), 0);
-  const average = gradedAssessments.length ? scoreSum / gradedAssessments.length : null;
+  const weightedScoreSum = weightedItems.reduce(
+    (sum, assessment) => sum + (assessmentScoreOnTen(assessment) ?? 0) * (assessment.weight ?? 0),
+    0,
+  );
+  const average =
+    component.calculation === "weighted"
+      ? totalInnerWeight ? weightedScoreSum / totalInnerWeight : null
+      : gradedAssessments.length ? scoreSum / gradedAssessments.length : null;
   const contribution = average !== null && component.weight !== null ? (average * component.weight) / 100 : null;
 
   return {
@@ -50,6 +64,7 @@ export function summarizeGradeComponent(component: GradeComponent, assessments: 
     gradedAssessments,
     average,
     contribution,
+    hasMissingWeights,
   };
 }
 

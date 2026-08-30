@@ -126,6 +126,7 @@ export type MaterialFolder = {
   user_id?: string;
   subject_id: string;
   name: string;
+  sort_order?: number | null;
   created_at: string;
 };
 

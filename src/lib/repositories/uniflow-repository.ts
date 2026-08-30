@@ -84,7 +84,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
-    supabase.from("material_folders").select("*").order("name"),
+    supabase.from("material_folders").select("*").order("sort_order", { nullsFirst: true }).order("name"),
   ]);
 
   for (const result of [subjects, demands, topics, assessments, assessmentTopics, materials]) {
@@ -503,11 +503,13 @@ export async function saveMaterialFolder(folder: MaterialFolder) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     const exists = data.materialFolders.some((item) => item.id === folder.id);
+    const sort_order = folder.sort_order ?? data.materialFolders.filter((item) => item.subject_id === folder.subject_id).length + 1;
+    const nextFolder = { ...folder, sort_order };
     data.materialFolders = exists
-      ? data.materialFolders.map((item) => (item.id === folder.id ? folder : item))
-      : [...data.materialFolders, folder];
+      ? data.materialFolders.map((item) => (item.id === folder.id ? nextFolder : item))
+      : [...data.materialFolders, nextFolder];
     writeDemoData(data);
-    return folder;
+    return nextFolder;
   }
 
   const user_id = await requireUserId();
@@ -518,6 +520,23 @@ export async function saveMaterialFolder(folder: MaterialFolder) {
     .single();
   if (error) throw error;
   return data as MaterialFolder;
+}
+
+export async function reorderMaterialFolders(folders: MaterialFolder[]) {
+  if (!folders.length) return;
+
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const updates = new Map(folders.map((folder) => [folder.id, folder]));
+    data.materialFolders = data.materialFolders.map((folder) => updates.get(folder.id) ?? folder);
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const rows = folders.map((folder) => ({ ...folder, user_id }));
+  const { error } = await supabase.from("material_folders").upsert(rows);
+  if (error) throw error;
 }
 
 export async function deleteMaterialFolder(id: string) {

@@ -15,6 +15,7 @@ import {
   loadAppData,
   materialPublicUrl,
   reorderMaterials as persistMaterialOrder,
+  reorderMaterialFolders as persistMaterialFolderOrder,
   reorderSubjects as persistSubjectOrder,
   saveAssessment,
   saveDemand,
@@ -64,6 +65,7 @@ type DataContextValue = AppData & {
   upsertMaterial: (material: Material) => Promise<void>;
   upsertMaterialFolder: (folder: MaterialFolder) => Promise<void>;
   removeMaterialFolder: (id: string) => Promise<void>;
+  reorderMaterialFolders: (folders: MaterialFolder[]) => Promise<void>;
   uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
   uploadMaterialFiles: (subjectId: string, files: File[], folderId?: string | null) => Promise<void>;
   reorderMaterials: (materials: Material[]) => Promise<void>;
@@ -322,6 +324,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       async removeMaterialFolder(id) {
         await deleteMaterialFolder(id);
         await refresh(false);
+      },
+      async reorderMaterialFolders(folders) {
+        const previousFolders = dataRef.current.materialFolders;
+        const updates = new Map(folders.map((folder) => [folder.id, folder]));
+        updateData((current) => ({
+          ...current,
+          materialFolders: current.materialFolders.map((folder) => updates.get(folder.id) ?? folder),
+        }));
+        try {
+          await persistMaterialFolderOrder(folders);
+        } catch (error) {
+          updateData((current) => ({ ...current, materialFolders: previousFolders }));
+          throw error;
+        }
       },
       async uploadMaterialFile(subjectId, file, name, folderId) {
         await uploadMaterialFile(subjectId, file, name, folderId);

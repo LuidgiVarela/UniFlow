@@ -158,11 +158,13 @@ create table if not exists public.material_folders (
   user_id uuid not null references auth.users(id) on delete cascade,
   subject_id uuid not null references public.subjects(id) on delete cascade,
   name text not null,
+  sort_order integer,
   created_at timestamptz not null default now()
 );
 
 alter table public.materials add column if not exists folder_id uuid;
 alter table public.materials add column if not exists sort_order integer;
+alter table public.material_folders add column if not exists sort_order integer;
 
 do $$
 begin
@@ -359,5 +361,6 @@ create index if not exists assessments_user_id_date_idx on public.assessments(us
 create index if not exists assessment_topics_topic_id_idx on public.assessment_topics(topic_id);
 create index if not exists materials_subject_id_idx on public.materials(subject_id);
 create index if not exists material_folders_subject_id_idx on public.material_folders(subject_id);
+create index if not exists material_folders_subject_sort_order_idx on public.material_folders(subject_id, sort_order);
 create index if not exists materials_folder_id_idx on public.materials(folder_id);
 create index if not exists materials_folder_sort_order_idx on public.materials(folder_id, sort_order);

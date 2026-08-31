@@ -84,7 +84,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
-    supabase.from("material_folders").select("*").order("sort_order", { nullsFirst: true }).order("name"),
+    supabase.from("material_folders").select("*").order("parent_folder_id", { nullsFirst: true }).order("sort_order", { nullsFirst: true }).order("name"),
   ]);
 
   for (const result of [subjects, demands, topics, assessments, assessmentTopics, materials]) {
@@ -503,8 +503,13 @@ export async function saveMaterialFolder(folder: MaterialFolder) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     const exists = data.materialFolders.some((item) => item.id === folder.id);
-    const sort_order = folder.sort_order ?? data.materialFolders.filter((item) => item.subject_id === folder.subject_id).length + 1;
-    const nextFolder = { ...folder, sort_order };
+    const parent_folder_id = folder.parent_folder_id ?? null;
+    const sort_order =
+      folder.sort_order ??
+      data.materialFolders.filter(
+        (item) => item.subject_id === folder.subject_id && (item.parent_folder_id ?? null) === parent_folder_id,
+      ).length + 1;
+    const nextFolder = { ...folder, parent_folder_id, sort_order };
     data.materialFolders = exists
       ? data.materialFolders.map((item) => (item.id === folder.id ? nextFolder : item))
       : [...data.materialFolders, nextFolder];
@@ -543,6 +548,9 @@ export async function deleteMaterialFolder(id: string) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     data.materialFolders = data.materialFolders.filter((item) => item.id !== id);
+    data.materialFolders = data.materialFolders.map((item) =>
+      item.parent_folder_id === id ? { ...item, parent_folder_id: null } : item,
+    );
     data.materials = data.materials.map((item) => (item.folder_id === id ? { ...item, folder_id: null } : item));
     writeDemoData(data);
     return;

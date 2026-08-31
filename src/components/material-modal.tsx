@@ -11,16 +11,18 @@ export function MaterialModal({
   open,
   onClose,
   folders,
+  initialFolderId,
   subjectId,
 }: {
   open: boolean;
   onClose: () => void;
   folders: MaterialFolder[];
+  initialFolderId?: string | null;
   subjectId: string;
 }) {
   const { upsertMaterial, uploadMaterialFile, uploadMaterialFiles } = useAppData();
   const [type, setType] = useState<MaterialType>("file");
-  const [folderId, setFolderId] = useState("");
+  const [folderId, setFolderId] = useState(initialFolderId ?? "");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -29,6 +31,15 @@ export function MaterialModal({
   const [saving, setSaving] = useState(false);
 
   if (!open) return null;
+
+  function closeModal() {
+    setFolderId(initialFolderId ?? "");
+    setName("");
+    setUrl("");
+    setFiles([]);
+    setMessage(null);
+    onClose();
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -69,7 +80,7 @@ export function MaterialModal({
       setUrl("");
       setFiles([]);
       setFileInputKey((current) => current + 1);
-      setFolderId("");
+      setFolderId(initialFolderId ?? "");
       onClose();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível salvar o material.");
@@ -83,7 +94,7 @@ export function MaterialModal({
       <form className="modal form-stack compact-modal" onSubmit={submit}>
         <div className="modal-header">
           <h2>Adicionar material</h2>
-          <button className="icon-button" onClick={onClose} type="button">x</button>
+          <button className="icon-button" onClick={closeModal} type="button">x</button>
         </div>
         <div className="segmented-control">
           <button className={type === "file" ? "active" : ""} onClick={() => setType("file")} type="button">Arquivo</button>

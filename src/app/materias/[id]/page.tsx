@@ -3,7 +3,7 @@
 import { Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
 import { DemandDescriptionPreview } from "@/components/demand-description-preview";
@@ -61,6 +61,24 @@ function moveListItem<T>(items: T[], fromIndex: number, toIndex: number) {
   return nextItems;
 }
 
+function normalizedFolderParent(folder: MaterialFolder) {
+  return folder.parent_folder_id ?? null;
+}
+
+function normalizedMaterialFolder(material: Material) {
+  return material.folder_id ?? null;
+}
+
+function folderChildCount(folders: MaterialFolder[], folderId: string) {
+  return folders.filter((folder) => normalizedFolderParent(folder) === folderId).length;
+}
+
+function isMiddleDrop(event: React.DragEvent<HTMLElement>) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const ratio = (event.clientY - rect.top) / rect.height;
+  return ratio > 0.28 && ratio < 0.72;
+}
+
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const {
@@ -101,7 +119,6 @@ export default function SubjectDetailPage() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
-  const activeFolderIdRef = useRef<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<MaterialFolder | null>(null);
   const [folderName, setFolderName] = useState("");
@@ -124,14 +141,19 @@ export default function SubjectDetailPage() {
         .sort((a, b) => new Date(`${a.date ?? "2999-12-31"}T12:00:00`).getTime() - new Date(`${b.date ?? "2999-12-31"}T12:00:00`).getTime()),
     [assessments, params.id],
   );
+  const subjectMaterials = useMemo(
+    () => materials.filter((material) => material.subject_id === params.id).sort(sortMaterials),
+    [materials, params.id],
+  );
+  const subjectFolders = useMemo(
+    () => materialFolders.filter((folder) => folder.subject_id === params.id).sort(sortMaterialFolders),
+    [materialFolders, params.id],
+  );
+  const folderById = useMemo(() => new Map(subjectFolders.map((folder) => [folder.id, folder])), [subjectFolders]);
 
   useEffect(() => {
-    activeFolderIdRef.current = activeFolderId;
-  }, [activeFolderId]);
-
-  useEffect(() => {
-    function handlePopState() {
-      if (activeFolderIdRef.current) setActiveFolderId(null);
+    function handlePopState(event: PopStateEvent) {
+      setActiveFolderId(event.state?.uniflowMaterialFolderId ?? null);
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -187,15 +209,35 @@ export default function SubjectDetailPage() {
   const progress = topicProgress(subjectTopics);
   const upcomingAssessments = subjectAssessments.filter(isAssessmentUpcoming);
   const completedAssessments = subjectAssessments.filter((assessment) => !isAssessmentUpcoming(assessment));
-  const subjectMaterials = materials.filter((material) => material.subject_id === subject.id).sort(sortMaterials);
-  const subjectFolders = materialFolders
-    .filter((folder) => folder.subject_id === subject.id)
-    .sort(sortMaterialFolders);
-  const looseMaterials = subjectMaterials.filter((material) => !material.folder_id);
-  const activeFolder = activeFolderId ? subjectFolders.find((folder) => folder.id === activeFolderId) ?? null : null;
-  const activeMaterials = activeFolderId
-    ? subjectMaterials.filter((material) => material.folder_id === activeFolderId)
+  const activeFolder = activeFolderId ? folderById.get(activeFolderId) ?? null : null;
+  const currentFolderId = activeFolder?.id ?? null;
+  const currentFolders = subjectFolders.filter((folder) => normalizedFolderParent(folder) === currentFolderId);
+  const currentMaterials = subjectMaterials.filter((material) => normalizedMaterialFolder(material) === currentFolderId);
+  const folderPath = activeFolder
+    ? (() => {
+        const path: MaterialFolder[] = [];
+        const visited = new Set<string>();
+        let current: MaterialFolder | undefined = activeFolder;
+        while (current && !visited.has(current.id)) {
+          path.unshift(current);
+          visited.add(current.id);
+          current = current.parent_folder_id ? folderById.get(current.parent_folder_id) : undefined;
+        }
+        return path;
+      })()
     : [];
+  const materialFolderOptions = subjectFolders.map((folder) => {
+    const path: string[] = [];
+    const visited = new Set<string>();
+    let current: MaterialFolder | undefined = folder;
+    while (current && !visited.has(current.id)) {
+      path.unshift(current.name);
+      visited.add(current.id);
+      current = current.parent_folder_id ? folderById.get(current.parent_folder_id) : undefined;
+    }
+    return { ...folder, name: path.join(" / ") };
+  });
+  const currentDropTargetId = `current-folder:${currentFolderId ?? "root"}`;
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -205,7 +247,23 @@ export default function SubjectDetailPage() {
     return names.join(", ");
   }
 
+  function isFolderDescendant(folderId: string, possibleAncestorId: string) {
+    const visited = new Set<string>();
+    let current = folderById.get(folderId);
+    while (current?.parent_folder_id && !visited.has(current.id)) {
+      if (current.parent_folder_id === possibleAncestorId) return true;
+      visited.add(current.id);
+      current = folderById.get(current.parent_folder_id);
+    }
+    return false;
+  }
+
   function openMaterialFolder(folderId: string) {
+    window.history.pushState({ uniflowMaterialFolderId: folderId }, "", window.location.href);
+    setActiveFolderId(folderId);
+  }
+
+  function goToMaterialFolder(folderId: string | null) {
     window.history.pushState({ uniflowMaterialFolderId: folderId }, "", window.location.href);
     setActiveFolderId(folderId);
   }
@@ -244,7 +302,12 @@ export default function SubjectDetailPage() {
   async function moveMaterialToFolder(materialId: string, folderId: string | null) {
     const material = subjectMaterials.find((item) => item.id === materialId);
     if (!material) return;
-    if ((material.folder_id ?? null) === folderId) return;
+    if ((material.folder_id ?? null) === folderId) {
+      setDraggedMaterialId(null);
+      setDragOverMaterialId(null);
+      setDropTargetId(null);
+      return;
+    }
     const targetItems = subjectMaterials.filter((item) => (item.folder_id ?? null) === folderId);
     setMaterialError(null);
     try {
@@ -288,11 +351,18 @@ export default function SubjectDetailPage() {
   }
 
   async function reorderFolderList(sourceId: string, targetId: string) {
-    const fromIndex = subjectFolders.findIndex((folder) => folder.id === sourceId);
-    const toIndex = subjectFolders.findIndex((folder) => folder.id === targetId);
+    const source = subjectFolders.find((folder) => folder.id === sourceId);
+    const target = subjectFolders.find((folder) => folder.id === targetId);
+    if (!source || !target) return;
+    const parentFolderId = normalizedFolderParent(source);
+    if (normalizedFolderParent(target) !== parentFolderId) return;
+
+    const currentList = subjectFolders.filter((folder) => normalizedFolderParent(folder) === parentFolderId);
+    const fromIndex = currentList.findIndex((folder) => folder.id === sourceId);
+    const toIndex = currentList.findIndex((folder) => folder.id === targetId);
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
 
-    const orderedFolders = moveListItem(subjectFolders, fromIndex, toIndex).map((folder, index) => ({
+    const orderedFolders = moveListItem(currentList, fromIndex, toIndex).map((folder, index) => ({
       ...folder,
       sort_order: index + 1,
     }));
@@ -302,6 +372,36 @@ export default function SubjectDetailPage() {
       await reorderMaterialFolders(orderedFolders);
     } catch (error) {
       setMaterialError(error instanceof Error ? error.message : "Não foi possível reorganizar as pastas.");
+    } finally {
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      setDropTargetId(null);
+    }
+  }
+
+  async function moveFolderToParent(folderId: string, parentFolderId: string | null) {
+    const folder = subjectFolders.find((item) => item.id === folderId);
+    if (!folder) return;
+    if (folder.id === parentFolderId || (parentFolderId && isFolderDescendant(parentFolderId, folder.id))) {
+      setMaterialError("Não dá para mover uma pasta para dentro dela mesma.");
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      setDropTargetId(null);
+      return;
+    }
+    if (normalizedFolderParent(folder) === parentFolderId) {
+      setDraggedFolderId(null);
+      setDragOverFolderId(null);
+      setDropTargetId(null);
+      return;
+    }
+
+    const targetFolders = subjectFolders.filter((item) => normalizedFolderParent(item) === parentFolderId);
+    setMaterialError(null);
+    try {
+      await upsertMaterialFolder({ ...folder, parent_folder_id: parentFolderId, sort_order: targetFolders.length + 1 });
+    } catch (error) {
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível mover a pasta.");
     } finally {
       setDraggedFolderId(null);
       setDragOverFolderId(null);
@@ -326,8 +426,9 @@ export default function SubjectDetailPage() {
       await upsertMaterialFolder({
         id: editingFolder?.id ?? crypto.randomUUID(),
         subject_id: subjectId,
+        parent_folder_id: editingFolder ? editingFolder.parent_folder_id ?? null : currentFolderId,
         name: trimmed,
-        sort_order: editingFolder?.sort_order ?? subjectFolders.length + 1,
+        sort_order: editingFolder?.sort_order ?? currentFolders.length + 1,
         created_at: editingFolder?.created_at ?? new Date().toISOString(),
       });
       setFolderName("");
@@ -341,7 +442,7 @@ export default function SubjectDetailPage() {
   }
 
   async function deleteFolder(folderId: string, folderName: string) {
-    const ok = window.confirm(`Excluir a pasta "${folderName}"? Os materiais dela continuam soltos em Materiais.`);
+    const ok = window.confirm(`Excluir a pasta "${folderName}"? Os materiais e subpastas diretos dela continuam soltos em Materiais.`);
     if (!ok) return;
     setMaterialError(null);
     try {
@@ -354,7 +455,15 @@ export default function SubjectDetailPage() {
 
   function renderFolder(folder: MaterialFolder) {
     const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
-    const canReorderFolder = draggedFolderId !== null && draggedFolderId !== folder.id;
+    const folderChildren = folderChildCount(subjectFolders, folder.id);
+    const canReorderFolder =
+      draggedFolderId !== null &&
+      draggedFolderId !== folder.id &&
+      normalizedFolderParent(subjectFolders.find((item) => item.id === draggedFolderId) ?? folder) === normalizedFolderParent(folder);
+    const canDropFolder =
+      draggedFolderId !== null &&
+      draggedFolderId !== folder.id &&
+      !isFolderDescendant(folder.id, draggedFolderId);
     const canDropMaterial = draggedMaterialId !== null;
 
     return (
@@ -374,11 +483,12 @@ export default function SubjectDetailPage() {
           setDropTargetId(null);
         }}
         onDragOver={(event) => {
-          if (!canReorderFolder && !canDropMaterial) return;
+          if (!canReorderFolder && !canDropFolder && !canDropMaterial) return;
           event.preventDefault();
+          event.stopPropagation();
           event.dataTransfer.dropEffect = "move";
           if (canReorderFolder) setDragOverFolderId(folder.id);
-          if (canDropMaterial) setDropTargetId(folder.id);
+          if (canDropMaterial || canDropFolder) setDropTargetId(folder.id);
         }}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move";
@@ -397,16 +507,27 @@ export default function SubjectDetailPage() {
             return;
           }
           if (source.startsWith("folder:")) {
-            void reorderFolderList(source.replace(/^folder:/, ""), folder.id);
+            const sourceId = source.replace(/^folder:/, "");
+            const sourceFolder = subjectFolders.find((item) => item.id === sourceId);
+            if (sourceFolder && normalizedFolderParent(sourceFolder) === normalizedFolderParent(folder) && !isMiddleDrop(event)) {
+              void reorderFolderList(sourceId, folder.id);
+              return;
+            }
+            void moveFolderToParent(sourceId, folder.id);
           }
         }}
-        title="Arraste para reorganizar ou solte arquivos aqui"
+        title="Arraste para reorganizar ou solte arquivos e pastas aqui"
       >
         <button className="material-folder-open explorer-entry-main" onClick={() => openMaterialFolder(folder.id)} type="button">
           <Folder size={18} />
           <span>
             <strong>{folder.name}</strong>
-            <small>{folderMaterials.length} {folderMaterials.length === 1 ? "material" : "materiais"}</small>
+            <small>
+              {[
+                folderChildren ? `${folderChildren} ${folderChildren === 1 ? "pasta" : "pastas"}` : null,
+                folderMaterials.length ? `${folderMaterials.length} ${folderMaterials.length === 1 ? "material" : "materiais"}` : null,
+              ].filter(Boolean).join(" - ") || "Pasta vazia"}
+            </small>
           </span>
         </button>
         <div className="row-actions">
@@ -445,6 +566,7 @@ export default function SubjectDetailPage() {
         onDragOver={(event) => {
           if (!canReorderHere) return;
           event.preventDefault();
+          event.stopPropagation();
           event.dataTransfer.dropEffect = "move";
           setDragOverMaterialId(material.id);
         }}
@@ -617,13 +739,11 @@ export default function SubjectDetailPage() {
               <div className="material-breadcrumb">
                 <button
                   className={dropTargetId === "root" ? "drop-active" : ""}
-                  onClick={() => {
-                    if (activeFolderId) closeMaterialFolder();
-                  }}
+                  onClick={() => goToMaterialFolder(null)}
                   onDragEnter={() => setDropTargetId("root")}
                   onDragLeave={() => setDropTargetId(null)}
                   onDragOver={(event) => {
-                    if (!draggedMaterialId) return;
+                    if (!draggedMaterialId && !draggedFolderId) return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                   }}
@@ -631,20 +751,42 @@ export default function SubjectDetailPage() {
                     event.preventDefault();
                     const source = event.dataTransfer.getData("text/plain");
                     if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), null);
+                    if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), null);
                   }}
                   type="button"
                 >
                   Materiais
                 </button>
-                {activeFolder ? (
-                  <>
+                {folderPath.map((folder) => (
+                  <span className="material-breadcrumb-segment" key={folder.id}>
                     <span>/</span>
-                    <strong>{activeFolder.name}</strong>
-                  </>
-                ) : null}
+                    <button
+                      className={dropTargetId === folder.id ? "drop-active" : ""}
+                      onClick={() => goToMaterialFolder(folder.id)}
+                      onDragEnter={() => setDropTargetId(folder.id)}
+                      onDragLeave={() => setDropTargetId(null)}
+                      onDragOver={(event) => {
+                        if (!draggedMaterialId && !draggedFolderId) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const source = event.dataTransfer.getData("text/plain");
+                        if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), folder.id);
+                        if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), folder.id);
+                      }}
+                      type="button"
+                    >
+                      {folder.name}
+                    </button>
+                  </span>
+                ))}
               </div>
             </div>
             <div className="section-actions">
+              <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
+              <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
               {activeFolder ? (
                 <>
                   <button className="ghost-action" onClick={() => openFolderModal(activeFolder)} type="button">
@@ -654,42 +796,30 @@ export default function SubjectDetailPage() {
                     <Trash2 size={15} />Excluir pasta
                   </button>
                 </>
-              ) : (
-                <>
-                  <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
-                  <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
-                </>
-              )}
+              ) : null}
             </div>
           </div>
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
           <div
-            className={`material-explorer-list ${dropTargetId === "root" ? "drop-active" : ""}`}
+            className={`material-explorer-list ${dropTargetId === currentDropTargetId ? "drop-active" : ""}`}
             onDragOver={(event) => {
-              if (!activeFolderId || !draggedMaterialId) return;
+              if (!draggedMaterialId && !draggedFolderId) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
-              setDropTargetId("root");
+              setDropTargetId(currentDropTargetId);
             }}
             onDrop={(event) => {
-              if (!activeFolderId) return;
               event.preventDefault();
               const source = event.dataTransfer.getData("text/plain");
-              if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), null);
+              if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), currentFolderId);
+              if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), currentFolderId);
             }}
           >
-            {activeFolder ? (
-              <>
-                {activeMaterials.map((material) => renderMaterial(material))}
-                {!activeMaterials.length ? <p className="muted compact-note">Pasta vazia.</p> : null}
-              </>
-            ) : (
-              <>
-                {subjectFolders.map((folder) => renderFolder(folder))}
-                {looseMaterials.map((material) => renderMaterial(material))}
-                {!subjectMaterials.length && !subjectFolders.length ? <p className="muted compact-note">Nenhum material ainda.</p> : null}
-              </>
-            )}
+            {currentFolders.map((folder) => renderFolder(folder))}
+            {currentMaterials.map((material) => renderMaterial(material))}
+            {!currentFolders.length && !currentMaterials.length ? (
+              <p className="muted compact-note">{activeFolder ? "Pasta vazia." : "Nenhum material ainda."}</p>
+            ) : null}
           </div>
         </Panel>
       ) : null}
@@ -699,7 +829,14 @@ export default function SubjectDetailPage() {
       <DemandModal open={Boolean(editingDemand)} demand={editingDemand} onClose={() => setEditingDemand(null)} />
       <AssessmentModal open={assessmentOpen} subjectId={subject.id} onClose={() => setAssessmentOpen(false)} />
       <AssessmentModal open={Boolean(editingAssessment)} assessment={editingAssessment} onClose={() => setEditingAssessment(null)} />
-      <MaterialModal folders={subjectFolders} open={materialOpen} subjectId={subject.id} onClose={() => setMaterialOpen(false)} />
+      <MaterialModal
+        folders={materialFolderOptions}
+        initialFolderId={currentFolderId}
+        key={`material-modal:${currentFolderId ?? "root"}`}
+        open={materialOpen}
+        subjectId={subject.id}
+        onClose={() => setMaterialOpen(false)}
+      />
       {folderOpen ? (
         <div className="modal-backdrop">
           <form className="modal form-stack compact-modal" onSubmit={saveFolder}>

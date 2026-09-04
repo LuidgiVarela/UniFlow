@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { Download, Edit, ExternalLink, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -73,6 +73,30 @@ function folderChildCount(folders: MaterialFolder[], folderId: string) {
   return folders.filter((folder) => normalizedFolderParent(folder) === folderId).length;
 }
 
+function zipSafeName(name: string, fallback: string) {
+  const clean = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, " ");
+  return clean || fallback;
+}
+
+function uniqueZipName(name: string, usedNames: Set<string>) {
+  if (!usedNames.has(name)) {
+    usedNames.add(name);
+    return name;
+  }
+
+  const dotIndex = name.lastIndexOf(".");
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const extension = dotIndex > 0 ? name.slice(dotIndex) : "";
+  let index = 2;
+  let nextName = `${base} (${index})${extension}`;
+  while (usedNames.has(nextName)) {
+    index += 1;
+    nextName = `${base} (${index})${extension}`;
+  }
+  usedNames.add(nextName);
+  return nextName;
+}
+
 function isMiddleDrop(event: React.DragEvent<HTMLElement>) {
   const rect = event.currentTarget.getBoundingClientRect();
   const ratio = (event.clientY - rect.top) / rect.height;
@@ -112,6 +136,7 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
+  const [zipStatus, setZipStatus] = useState<string | null>(null);
   const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
   const [dragOverMaterialId, setDragOverMaterialId] = useState<string | null>(null);
@@ -208,6 +233,7 @@ export default function SubjectDetailPage() {
   }
 
   const subjectId = subject.id;
+  const subjectCode = subject.code;
   const upcomingAssessment = nextAssessment(assessments, subject.id);
   const nextTask = subjectDemands.find((demand) => demand.status !== "concluido") ?? null;
   const progress = topicProgress(subjectTopics);
@@ -454,6 +480,80 @@ export default function SubjectDetailPage() {
       if (activeFolderId === folderId) closeMaterialFolder();
     } catch (error) {
       setMaterialError(error instanceof Error ? error.message : "Não foi possível excluir a pasta.");
+    }
+  }
+
+  async function downloadCurrentFolderZip() {
+    setMaterialError(null);
+    setZipStatus("Preparando ZIP...");
+
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      const rootName = zipSafeName(activeFolder?.name ?? subjectCode, "materiais");
+      const root = zip.folder(rootName);
+      if (!root) throw new Error("Não foi possível criar o ZIP.");
+
+      let fileCount = 0;
+      let linkCount = 0;
+      const folderIdsInZip = new Set<string>();
+
+      async function addFolderToZip(parentFolderId: string | null, target: InstanceType<typeof JSZip>) {
+        const usedNames = new Set<string>();
+        const folderMaterials = subjectMaterials.filter((material) => normalizedMaterialFolder(material) === parentFolderId);
+        const folderChildren = subjectFolders.filter((folder) => normalizedFolderParent(folder) === parentFolderId);
+        const links: string[] = [];
+
+        for (const folder of folderChildren) {
+          if (folderIdsInZip.has(folder.id)) continue;
+          folderIdsInZip.add(folder.id);
+          const childName = uniqueZipName(zipSafeName(folder.name, "pasta"), usedNames);
+          const childZip = target.folder(childName);
+          if (childZip) await addFolderToZip(folder.id, childZip);
+        }
+
+        for (const material of folderMaterials) {
+          const name = uniqueZipName(zipSafeName(material.name, "material"), usedNames);
+
+          if (material.type === "link") {
+            links.push(`${name}: ${material.url ?? ""}`);
+            linkCount += 1;
+            continue;
+          }
+
+          const href = materialUrls[material.id] || await getMaterialUrl(material);
+          const response = await fetch(href, { cache: "no-store" });
+          if (!response.ok) throw new Error(`Não foi possível baixar "${material.name}".`);
+          target.file(name, await response.blob());
+          fileCount += 1;
+        }
+
+        if (links.length) {
+          target.file("links.txt", links.join("\n"));
+        }
+      }
+
+      await addFolderToZip(currentFolderId, root);
+
+      if (!fileCount && !linkCount) {
+        setMaterialError("Esta pasta não tem arquivos para baixar.");
+        return;
+      }
+
+      setZipStatus("Gerando arquivo...");
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${rootName}.zip`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível baixar o ZIP.");
+    } finally {
+      setZipStatus(null);
     }
   }
 
@@ -795,6 +895,14 @@ export default function SubjectDetailPage() {
             <div className="section-actions">
               <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
               <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
+              <button
+                className={`ghost-action ${zipStatus ? "is-loading" : ""}`}
+                disabled={Boolean(zipStatus)}
+                onClick={() => void downloadCurrentFolderZip()}
+                type="button"
+              >
+                <Download size={16} />{activeFolder ? "Baixar pasta" : "Baixar materiais"}
+              </button>
               {activeFolder ? (
                 <>
                   <button className="ghost-action" onClick={() => openFolderModal(activeFolder)} type="button">
@@ -807,6 +915,7 @@ export default function SubjectDetailPage() {
               ) : null}
             </div>
           </div>
+          {zipStatus ? <p className="form-message material-zip-status">{zipStatus}</p> : null}
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
           <div
             className={`material-explorer-list ${dropTargetId === currentDropTargetId ? "drop-active" : ""}`}

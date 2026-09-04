@@ -607,6 +607,11 @@ h3 {
   background: var(--surface-strong);
 }
 
+.ghost-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .ghost-action.danger {
   color: #ff8a8a;
 }
@@ -1682,6 +1687,10 @@ label {
 
 .material-explorer-list > .compact-note {
   padding: 14px;
+}
+
+.material-zip-status {
+  color: var(--muted);
 }
 
 .material-folder-row {

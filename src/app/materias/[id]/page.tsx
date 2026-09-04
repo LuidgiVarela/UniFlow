@@ -523,11 +523,12 @@ export default function SubjectDetailPage() {
       return;
     }
 
-    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+    const popup = window.open("about:blank", "_blank");
     if (!popup) {
       setMaterialError("O navegador bloqueou a nova aba. Libere pop-ups para o UniFlow e tente de novo.");
       return;
     }
+    popup.opener = null;
 
     setMaterialError(null);
     setOpeningMaterialId(material.id);

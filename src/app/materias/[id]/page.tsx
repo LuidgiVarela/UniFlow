@@ -94,7 +94,6 @@ export default function SubjectDetailPage() {
     topics,
     loading,
     completeDemand,
-    getMaterialUrl,
     removeDemand,
     removeAssessment,
     removeMaterial,
@@ -112,7 +111,6 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
-  const [openingMaterialId, setOpeningMaterialId] = useState<string | null>(null);
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
   const [dragOverMaterialId, setDragOverMaterialId] = useState<string | null>(null);
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
@@ -517,35 +515,7 @@ export default function SubjectDetailPage() {
     );
   }
 
-  async function openMaterial(material: Material) {
-    if (material.type === "link" && material.url) {
-      window.open(material.url, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    const popup = window.open("about:blank", "_blank");
-    if (!popup) {
-      setMaterialError("O navegador bloqueou a nova aba. Libere pop-ups para o UniFlow e tente de novo.");
-      return;
-    }
-    popup.opener = null;
-
-    setMaterialError(null);
-    setOpeningMaterialId(material.id);
-    try {
-      const href = await getMaterialUrl(material);
-      if (!href || href === "#") throw new Error("Link do material indisponível.");
-      popup.location.replace(href);
-    } catch (error) {
-      popup.document.body.textContent = "Não foi possível abrir o arquivo.";
-      setMaterialError(error instanceof Error ? error.message : "Não foi possível abrir o arquivo.");
-    } finally {
-      setOpeningMaterialId(null);
-    }
-  }
-
   function renderMaterial(material: Material) {
-    const isOpening = openingMaterialId === material.id;
     const canReorderHere =
       draggedMaterialId !== null &&
       draggedMaterialId !== material.id &&
@@ -592,15 +562,15 @@ export default function SubjectDetailPage() {
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
         <strong>{material.name}</strong>
         <div className="row-actions">
-          <button
+          <a
             className="icon-button"
-            disabled={isOpening}
-            onClick={() => void openMaterial(material)}
-            title={isOpening ? "Abrindo" : "Abrir"}
-            type="button"
+            href={`/materiais/abrir/${material.id}`}
+            rel="noreferrer"
+            target="_blank"
+            title="Abrir"
           >
             <ExternalLink size={15} />
-          </button>
+          </a>
           <button className="icon-button danger" onClick={() => removeMaterial(material)} title="Excluir" type="button"><Trash2 size={15} /></button>
         </div>
       </article>

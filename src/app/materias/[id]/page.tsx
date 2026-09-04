@@ -523,23 +523,20 @@ export default function SubjectDetailPage() {
       return;
     }
 
-    const popup = window.open("", "_blank");
-    if (popup) popup.opener = null;
+    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+    if (!popup) {
+      setMaterialError("O navegador bloqueou a nova aba. Libere pop-ups para o UniFlow e tente de novo.");
+      return;
+    }
 
     setMaterialError(null);
     setOpeningMaterialId(material.id);
     try {
       const href = await getMaterialUrl(material);
       if (!href || href === "#") throw new Error("Link do material indisponível.");
-      if (popup) {
-        popup.location.href = href;
-      } else {
-        window.location.assign(href);
-      }
+      popup.location.replace(href);
     } catch (error) {
-      if (popup) {
-        popup.document.body.textContent = "Não foi possível abrir o arquivo.";
-      }
+      popup.document.body.textContent = "Não foi possível abrir o arquivo.";
       setMaterialError(error instanceof Error ? error.message : "Não foi possível abrir o arquivo.");
     } finally {
       setOpeningMaterialId(null);

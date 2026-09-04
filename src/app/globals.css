@@ -1610,14 +1610,18 @@ label {
 
 .material-explorer-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 14px;
   align-items: start;
   margin-bottom: 14px;
 }
 
 .material-explorer-toolbar h2 {
   margin-bottom: 8px;
+}
+
+.material-explorer-toolbar .section-actions {
+  justify-content: flex-start;
 }
 
 .material-breadcrumb {

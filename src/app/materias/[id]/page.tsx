@@ -94,6 +94,7 @@ export default function SubjectDetailPage() {
     topics,
     loading,
     completeDemand,
+    getMaterialUrl,
     removeDemand,
     removeAssessment,
     removeMaterial,
@@ -111,6 +112,7 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
+  const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
   const [dragOverMaterialId, setDragOverMaterialId] = useState<string | null>(null);
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
@@ -157,6 +159,35 @@ export default function SubjectDetailPage() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (tab !== "materials") return;
+    let active = true;
+
+    async function loadMaterialUrls() {
+      const entries = await Promise.all(
+        subjectMaterials.map(async (material) => {
+          try {
+            return [material.id, await getMaterialUrl(material)] as const;
+          } catch {
+            return [material.id, ""] as const;
+          }
+        }),
+      );
+      if (!active) return;
+      setMaterialUrls(Object.fromEntries(entries));
+    }
+
+    void loadMaterialUrls();
+    const refreshTimer = window.setInterval(() => {
+      void loadMaterialUrls();
+    }, 1000 * 60 * 30);
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [getMaterialUrl, subjectMaterials, tab]);
 
   if (loading) {
     return (
@@ -516,6 +547,7 @@ export default function SubjectDetailPage() {
   }
 
   function renderMaterial(material: Material) {
+    const href = materialUrls[material.id] || `/materiais/abrir/${material.id}`;
     const canReorderHere =
       draggedMaterialId !== null &&
       draggedMaterialId !== material.id &&
@@ -564,7 +596,7 @@ export default function SubjectDetailPage() {
         <div className="row-actions">
           <a
             className="icon-button"
-            href={`/materiais/abrir/${material.id}`}
+            href={href}
             rel="noreferrer"
             target="_blank"
             title="Abrir"

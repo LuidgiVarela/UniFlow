@@ -17,6 +17,7 @@ import type {
 const DEMO_KEY = "uniflow:demo-data";
 const MATERIAL_STORAGE_BUCKET = "subject-materials";
 const MATERIAL_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
+const MATERIAL_SIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60 * 6;
 
 export type MaterialStorageUsage = {
   usedBytes: number;
@@ -611,7 +612,9 @@ export async function deleteMaterial(material: Material) {
 export async function materialPublicUrl(material: Material) {
   if (material.type === "link") return material.url ?? "#";
   if (!hasSupabaseEnv || !supabase || !material.file_path) return "#";
-  const signed = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).createSignedUrl(material.file_path, 60 * 10);
+  const signed = await supabase.storage
+    .from(MATERIAL_STORAGE_BUCKET)
+    .createSignedUrl(material.file_path, MATERIAL_SIGNED_URL_EXPIRES_IN_SECONDS);
   if (signed.error) throw signed.error;
   const fileName = encodeURIComponent(materialOpenFileName(material));
   return `/api/materials/open/${fileName}?source=${encodeURIComponent(signed.data.signedUrl)}`;

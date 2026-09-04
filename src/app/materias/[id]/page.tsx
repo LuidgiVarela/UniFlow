@@ -112,7 +112,7 @@ export default function SubjectDetailPage() {
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null);
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialError, setMaterialError] = useState<string | null>(null);
-  const [materialUrls, setMaterialUrls] = useState<Record<string, string>>({});
+  const [openingMaterialId, setOpeningMaterialId] = useState<string | null>(null);
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null);
   const [dragOverMaterialId, setDragOverMaterialId] = useState<string | null>(null);
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null);
@@ -159,31 +159,6 @@ export default function SubjectDetailPage() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
-
-  useEffect(() => {
-    if (tab !== "materials") return;
-    const pageMaterials = materials.filter((material) => material.subject_id === params.id);
-    let active = true;
-
-    async function loadMaterialUrls() {
-      const entries = await Promise.all(
-        pageMaterials.map(async (material) => {
-          try {
-            return [material.id, await getMaterialUrl(material)] as const;
-          } catch {
-            return [material.id, ""] as const;
-          }
-        }),
-      );
-      if (!active) return;
-      setMaterialUrls(Object.fromEntries(entries));
-    }
-
-    void loadMaterialUrls();
-    return () => {
-      active = false;
-    };
-  }, [getMaterialUrl, materials, params.id, tab]);
 
   if (loading) {
     return (
@@ -542,8 +517,37 @@ export default function SubjectDetailPage() {
     );
   }
 
+  async function openMaterial(material: Material) {
+    if (material.type === "link" && material.url) {
+      window.open(material.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const popup = window.open("", "_blank");
+    if (popup) popup.opener = null;
+
+    setMaterialError(null);
+    setOpeningMaterialId(material.id);
+    try {
+      const href = await getMaterialUrl(material);
+      if (!href || href === "#") throw new Error("Link do material indisponível.");
+      if (popup) {
+        popup.location.href = href;
+      } else {
+        window.location.assign(href);
+      }
+    } catch (error) {
+      if (popup) {
+        popup.document.body.textContent = "Não foi possível abrir o arquivo.";
+      }
+      setMaterialError(error instanceof Error ? error.message : "Não foi possível abrir o arquivo.");
+    } finally {
+      setOpeningMaterialId(null);
+    }
+  }
+
   function renderMaterial(material: Material) {
-    const href = materialUrls[material.id] || undefined;
+    const isOpening = openingMaterialId === material.id;
     const canReorderHere =
       draggedMaterialId !== null &&
       draggedMaterialId !== material.id &&
@@ -590,11 +594,15 @@ export default function SubjectDetailPage() {
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
         <strong>{material.name}</strong>
         <div className="row-actions">
-          {href ? (
-            <a className="icon-button" href={href} rel="noreferrer" target="_blank" title="Abrir"><ExternalLink size={15} /></a>
-          ) : (
-            <button className="icon-button" disabled title="Preparando link" type="button"><ExternalLink size={15} /></button>
-          )}
+          <button
+            className="icon-button"
+            disabled={isOpening}
+            onClick={() => void openMaterial(material)}
+            title={isOpening ? "Abrindo" : "Abrir"}
+            type="button"
+          >
+            <ExternalLink size={15} />
+          </button>
           <button className="icon-button danger" onClick={() => removeMaterial(material)} title="Excluir" type="button"><Trash2 size={15} /></button>
         </div>
       </article>

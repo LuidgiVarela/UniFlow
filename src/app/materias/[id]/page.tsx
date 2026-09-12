@@ -2,7 +2,7 @@
 
 import { Download, Edit, ExternalLink, FilePenLine, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, TextCursorInput, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
@@ -30,13 +30,13 @@ import type { Assessment, Demand, Material, MaterialFolder } from "@/types/domai
 
 type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "grades" | "materials";
 
-const tabs: Array<{ id: SubjectTab; label: string }> = [
-  { id: "overview", label: "Visão geral" },
-  { id: "tasks", label: "Tarefas" },
-  { id: "content", label: "Conteúdo" },
-  { id: "assessments", label: "Avaliações" },
-  { id: "grades", label: "Notas" },
-  { id: "materials", label: "Materiais" },
+const tabs: Array<{ id: SubjectTab; label: string; query: string }> = [
+  { id: "overview", label: "Visão geral", query: "visao-geral" },
+  { id: "tasks", label: "Tarefas", query: "tarefas" },
+  { id: "content", label: "Conteúdo", query: "conteudo" },
+  { id: "assessments", label: "Avaliações", query: "avaliacoes" },
+  { id: "grades", label: "Notas", query: "notas" },
+  { id: "materials", label: "Materiais", query: "materiais" },
 ];
 
 function sortMaterials(a: Material, b: Material) {
@@ -110,6 +110,7 @@ function isPdfMaterial(material: Material) {
 
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const {
     subjects,
     demands,
@@ -133,7 +134,7 @@ export default function SubjectDetailPage() {
     upsertMaterial,
     upsertMaterialFolder,
   } = useAppData();
-  const [tab, setTab] = useState<SubjectTab>("overview");
+  const tab = tabs.find((item) => item.query === searchParams.get("aba"))?.id ?? "overview";
   const [editSubjectOpen, setEditSubjectOpen] = useState(false);
   const [demandOpen, setDemandOpen] = useState(false);
   const [editingDemand, setEditingDemand] = useState<Demand | null>(null);
@@ -811,9 +812,15 @@ export default function SubjectDetailPage() {
 
       <nav className="subject-tabs">
         {tabs.map((item) => (
-          <button className={tab === item.id ? "active" : ""} key={item.id} onClick={() => setTab(item.id)} type="button">
+          <Link
+            aria-current={tab === item.id ? "page" : undefined}
+            className={tab === item.id ? "active" : ""}
+            href={`/materias/${encodeURIComponent(params.id)}?aba=${item.query}`}
+            key={item.id}
+            scroll={false}
+          >
             {item.label}
-          </button>
+          </Link>
         ))}
       </nav>
 

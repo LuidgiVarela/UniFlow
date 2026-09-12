@@ -889,18 +889,21 @@ label {
   padding-bottom: 2px;
 }
 
-.subject-tabs button {
+.subject-tabs a {
   min-height: 34px;
   border: 0;
   border-radius: 7px;
   padding: 0 11px;
   background: transparent;
   color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
   white-space: nowrap;
 }
 
-.subject-tabs button.active,
-.subject-tabs button:hover {
+.subject-tabs a.active,
+.subject-tabs a:hover {
   background: var(--surface-strong);
   color: var(--foreground);
 }

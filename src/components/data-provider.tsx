@@ -14,6 +14,7 @@ import {
   getMaterialStorageUsage,
   loadAppData,
   materialPublicUrl,
+  replaceMaterialFile as persistMaterialFileReplacement,
   reorderMaterials as persistMaterialOrder,
   reorderMaterialFolders as persistMaterialFolderOrder,
   reorderSubjects as persistSubjectOrder,
@@ -67,6 +68,7 @@ type DataContextValue = AppData & {
   removeMaterialFolder: (id: string) => Promise<void>;
   reorderMaterialFolders: (folders: MaterialFolder[]) => Promise<void>;
   uploadMaterialFile: (subjectId: string, file: File, name?: string, folderId?: string | null) => Promise<void>;
+  replaceMaterialFile: (material: Material, file: File) => Promise<void>;
   uploadMaterialFiles: (subjectId: string, files: File[], folderId?: string | null) => Promise<void>;
   reorderMaterials: (materials: Material[]) => Promise<void>;
   removeMaterial: (material: Material) => Promise<void>;
@@ -342,6 +344,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       async uploadMaterialFile(subjectId, file, name, folderId) {
         await uploadMaterialFile(subjectId, file, name, folderId);
         await refresh(false);
+      },
+      async replaceMaterialFile(material, file) {
+        await persistMaterialFileReplacement(material, file);
       },
       async uploadMaterialFiles(subjectId, files, folderId) {
         try {

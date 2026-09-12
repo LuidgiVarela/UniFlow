@@ -585,6 +585,21 @@ export async function uploadMaterialFile(subjectId: string, file: File, name?: s
   });
 }
 
+export async function replaceMaterialFile(material: Material, file: File) {
+  if (!hasSupabaseEnv || !supabase) {
+    throw new Error("Substituicao de arquivos disponivel apenas com Supabase configurado.");
+  }
+  if (material.type !== "file" || !material.file_path) {
+    throw new Error("Este material nao possui um arquivo para substituir.");
+  }
+
+  const update = await supabase.storage.from(MATERIAL_STORAGE_BUCKET).update(material.file_path, file, {
+    cacheControl: "0",
+    contentType: file.type || "application/pdf",
+  });
+  if (update.error) throw update.error;
+}
+
 function materialOpenFileName(material: Material) {
   const storedName = material.file_path?.split("/").pop()?.replace(/^[0-9a-f-]{36}-/i, "") || "material";
   const extension = storedName.includes(".") ? storedName.slice(storedName.lastIndexOf(".")) : "";

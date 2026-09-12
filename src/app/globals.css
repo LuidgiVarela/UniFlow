@@ -1798,6 +1798,53 @@ label {
   gap: 8px;
 }
 
+.pdf-save-control {
+  position: relative;
+}
+
+.pdf-save-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #151517;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+  display: grid;
+}
+
+.pdf-save-menu button {
+  min-width: 0;
+  padding: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--foreground);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  text-align: left;
+}
+
+.pdf-save-menu button:hover {
+  background: var(--surface-strong);
+}
+
+.pdf-save-menu button span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pdf-save-menu button small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .pdf-editor-toolbar {
   min-height: 50px;
   padding: 7px 14px;
@@ -1850,6 +1897,51 @@ label {
   opacity: 0.55;
 }
 
+.pdf-draw-tools select {
+  width: 126px;
+  min-height: 34px;
+  padding: 5px 26px 5px 8px;
+  font-size: 0.78rem;
+}
+
+.pdf-toolbar-color {
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.pdf-toolbar-color input {
+  width: 44px;
+  height: 44px;
+  margin: -6px;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.pdf-toolbar-thickness {
+  width: 126px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.pdf-toolbar-thickness span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.pdf-toolbar-thickness input {
+  min-width: 0;
+  min-height: 20px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
 .pdf-history-tools .icon-button,
 .pdf-page-tools .icon-button,
 .pdf-zoom-tools .icon-button {
@@ -1889,7 +1981,7 @@ label {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 286px;
+  grid-template-columns: minmax(0, 1fr) 6px var(--pdf-inspector-width, 300px);
 }
 
 .pdf-editor-workspace {
@@ -1940,6 +2032,10 @@ label {
 
 .pdf-pages-stack.tool-draw .pdf-page-stage {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M4 16L7 15L16 6L14 4L5 13Z' fill='none' stroke='%23111111' stroke-width='1.5'/%3E%3C/svg%3E") 2 18, crosshair;
+}
+
+.pdf-pages-stack.tool-erase .pdf-page-stage {
+  cursor: crosshair;
 }
 
 .pdf-pages-stack.tool-draw .pdf-page-stage,
@@ -1993,6 +2089,19 @@ label {
   line-height: 1.25;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.pdf-inline-text-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 1px solid #2f7dd1;
+  background: rgba(255, 255, 255, 0.92);
+  resize: none;
+  overflow: auto;
 }
 
 .pdf-editor-image {
@@ -2076,9 +2185,31 @@ label {
 .pdf-editor-inspector {
   min-width: 0;
   padding: 18px;
-  border-left: 1px solid var(--line);
   background: #0d0d0f;
   overflow-y: auto;
+}
+
+.pdf-inspector-resizer {
+  position: relative;
+  z-index: 5;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid transparent;
+  background: #0d0d0f;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pdf-inspector-resizer:hover,
+.pdf-inspector-resizer:focus-visible,
+.is-resizing-pdf-inspector .pdf-inspector-resizer {
+  border-left-color: #4e91dc;
+  background: rgba(78, 145, 220, 0.18);
+  outline: 0;
+}
+
+.is-resizing-pdf-inspector {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .pdf-inspector-header {
@@ -2601,6 +2732,10 @@ label {
 
   .pdf-editor-body {
     display: block;
+  }
+
+  .pdf-inspector-resizer {
+    display: none;
   }
 
   .pdf-editor-workspace {

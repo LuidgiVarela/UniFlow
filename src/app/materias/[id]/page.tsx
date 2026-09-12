@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit, ExternalLink, FileText, Folder, FolderPlus, ImagePlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { Download, Edit, ExternalLink, FilePenLine, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -108,11 +108,6 @@ function isPdfMaterial(material: Material) {
   return /\.pdf$/i.test(material.name) || /\.pdf(?:$|\?)/i.test(material.file_path ?? "");
 }
 
-function editedPdfName(name: string) {
-  const cleanName = name.trim() || "material.pdf";
-  return /\.pdf$/i.test(cleanName) ? cleanName.replace(/\.pdf$/i, " - copia editada.pdf") : `${cleanName} - copia editada.pdf`;
-}
-
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const {
@@ -135,7 +130,6 @@ export default function SubjectDetailPage() {
     removeMaterialFolder,
     reorderMaterialFolders,
     reorderMaterials,
-    uploadMaterialFile,
     upsertMaterial,
     upsertMaterialFolder,
   } = useAppData();
@@ -157,14 +151,6 @@ export default function SubjectDetailPage() {
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [deletingFolderIds, setDeletingFolderIds] = useState<Set<string>>(() => new Set());
   const [deletingMaterialIds, setDeletingMaterialIds] = useState<Set<string>>(() => new Set());
-  const [editingPdfMaterial, setEditingPdfMaterial] = useState<Material | null>(null);
-  const [pdfImageFile, setPdfImageFile] = useState<File | null>(null);
-  const [pdfImagePage, setPdfImagePage] = useState(1);
-  const [pdfImageWidth, setPdfImageWidth] = useState(40);
-  const [pdfImageX, setPdfImageX] = useState<"left" | "center" | "right">("center");
-  const [pdfImageY, setPdfImageY] = useState<"top" | "middle" | "bottom">("middle");
-  const [pdfEditStatus, setPdfEditStatus] = useState<string | null>(null);
-  const [pdfEditError, setPdfEditError] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<MaterialFolder | null>(null);
   const [folderName, setFolderName] = useState("");
@@ -527,80 +513,6 @@ export default function SubjectDetailPage() {
     }
   }
 
-  function openPdfEditor(material: Material) {
-    setEditingPdfMaterial(material);
-    setPdfImageFile(null);
-    setPdfImagePage(1);
-    setPdfImageWidth(40);
-    setPdfImageX("center");
-    setPdfImageY("middle");
-    setPdfEditStatus(null);
-    setPdfEditError(null);
-  }
-
-  async function saveEditedPdfCopy(event: React.FormEvent) {
-    event.preventDefault();
-    if (!editingPdfMaterial || !pdfImageFile) return;
-
-    setPdfEditStatus("Preparando PDF...");
-    setPdfEditError(null);
-
-    try {
-      const [{ PDFDocument }, href] = await Promise.all([
-        import("pdf-lib"),
-        Promise.resolve(materialUrls[editingPdfMaterial.id] || getMaterialUrl(editingPdfMaterial)),
-      ]);
-      const pdfResponse = await fetch(href, { cache: "no-store" });
-      if (!pdfResponse.ok) throw new Error("Nao foi possivel abrir o PDF original.");
-
-      const [pdfBytes, imageBytes] = await Promise.all([
-        pdfResponse.arrayBuffer(),
-        pdfImageFile.arrayBuffer(),
-      ]);
-      const pdfDoc = await PDFDocument.load(pdfBytes);
-      const pageCount = pdfDoc.getPageCount();
-      const pageIndex = Math.min(Math.max(Math.floor(pdfImagePage), 1), pageCount) - 1;
-      const page = pdfDoc.getPage(pageIndex);
-      const imageType = pdfImageFile.type.toLowerCase();
-      const image = imageType.includes("png")
-        ? await pdfDoc.embedPng(imageBytes)
-        : await pdfDoc.embedJpg(imageBytes);
-      const { width: pageWidth, height: pageHeight } = page.getSize();
-      const targetWidth = pageWidth * (Math.min(Math.max(pdfImageWidth, 5), 95) / 100);
-      const targetHeight = targetWidth * (image.height / image.width);
-      const xMap = {
-        left: 36,
-        center: (pageWidth - targetWidth) / 2,
-        right: pageWidth - targetWidth - 36,
-      };
-      const yMap = {
-        top: pageHeight - targetHeight - 36,
-        middle: (pageHeight - targetHeight) / 2,
-        bottom: 36,
-      };
-
-      page.drawImage(image, {
-        x: Math.max(0, xMap[pdfImageX]),
-        y: Math.max(0, yMap[pdfImageY]),
-        width: Math.min(targetWidth, pageWidth),
-        height: Math.min(targetHeight, pageHeight),
-      });
-
-      setPdfEditStatus("Salvando nova copia...");
-      const nextBytes = await pdfDoc.save();
-      const nextName = editedPdfName(editingPdfMaterial.name);
-      const nextBuffer = nextBytes.buffer.slice(nextBytes.byteOffset, nextBytes.byteOffset + nextBytes.byteLength) as ArrayBuffer;
-      const nextFile = new File([nextBuffer], nextName, { type: "application/pdf" });
-      await uploadMaterialFile(subjectId, nextFile, nextName, editingPdfMaterial.folder_id ?? null);
-      setEditingPdfMaterial(null);
-      setPdfImageFile(null);
-    } catch (error) {
-      setPdfEditError(error instanceof Error ? error.message : "Nao foi possivel salvar a copia editada.");
-    } finally {
-      setPdfEditStatus(null);
-    }
-  }
-
   async function downloadCurrentFolderZip() {
     setMaterialError(null);
     setZipStatus("Preparando ZIP...");
@@ -824,9 +736,15 @@ export default function SubjectDetailPage() {
             <ExternalLink size={15} />
           </a>
           {isPdfMaterial(material) ? (
-            <button className="icon-button" disabled={isDeleting} onClick={() => openPdfEditor(material)} title="Adicionar imagem ao PDF" type="button">
-              <ImagePlus size={15} />
-            </button>
+            <a
+              className="icon-button"
+              href={`/materiais/editar/${material.id}`}
+              rel="noreferrer"
+              target="_blank"
+              title="Editar PDF"
+            >
+              <FilePenLine size={15} />
+            </a>
           ) : null}
           <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => deleteMaterial(material)} title="Excluir" type="button">
             {isDeleting ? null : <Trash2 size={15} />}
@@ -1100,57 +1018,6 @@ export default function SubjectDetailPage() {
             {folderError ? <p className="form-message error-message">{folderError}</p> : null}
             <button className={`primary-button full ${savingFolder ? "is-loading" : ""}`} disabled={savingFolder} type="submit">
               {savingFolder ? "Salvando..." : editingFolder ? "Salvar nome" : "Criar pasta"}
-            </button>
-          </form>
-        </div>
-      ) : null}
-      {editingPdfMaterial ? (
-        <div className="modal-backdrop">
-          <form className="modal form-stack pdf-edit-modal" onSubmit={saveEditedPdfCopy}>
-            <div className="modal-header">
-              <h2>Adicionar imagem ao PDF</h2>
-              <button className="icon-button" onClick={() => setEditingPdfMaterial(null)} type="button">x</button>
-            </div>
-            <div className="file-selection-summary">
-              <span>{editingPdfMaterial.name}</span>
-              <small>O original fica intacto. O UniFlow vai criar um novo PDF nesta pasta.</small>
-            </div>
-            <label>Imagem
-              <input
-                accept="image/png,image/jpeg"
-                onChange={(event) => setPdfImageFile(event.target.files?.[0] ?? null)}
-                required
-                type="file"
-              />
-            </label>
-            <div className="form-grid">
-              <label>Pagina
-                <input min={1} onChange={(event) => setPdfImagePage(Number(event.target.value))} required type="number" value={pdfImagePage} />
-              </label>
-              <label>Largura (% da pagina)
-                <input max={95} min={5} onChange={(event) => setPdfImageWidth(Number(event.target.value))} required type="number" value={pdfImageWidth} />
-              </label>
-            </div>
-            <div className="form-grid">
-              <label>Posicao horizontal
-                <select onChange={(event) => setPdfImageX(event.target.value as typeof pdfImageX)} value={pdfImageX}>
-                  <option value="left">Esquerda</option>
-                  <option value="center">Centro</option>
-                  <option value="right">Direita</option>
-                </select>
-              </label>
-              <label>Posicao vertical
-                <select onChange={(event) => setPdfImageY(event.target.value as typeof pdfImageY)} value={pdfImageY}>
-                  <option value="top">Topo</option>
-                  <option value="middle">Meio</option>
-                  <option value="bottom">Rodape</option>
-                </select>
-              </label>
-            </div>
-            {pdfEditError ? <p className="form-message error-message">{pdfEditError}</p> : null}
-            {pdfEditStatus ? <p className="form-message">{pdfEditStatus}</p> : null}
-            <button className={`primary-button full ${pdfEditStatus ? "is-loading" : ""}`} disabled={Boolean(pdfEditStatus)} type="submit">
-              Salvar uma nova copia modificada
             </button>
           </form>
         </div>

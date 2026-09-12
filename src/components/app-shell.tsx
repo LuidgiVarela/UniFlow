@@ -101,7 +101,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const { demoMode, signOut, user } = useAuth();
-  const { demands, getStorageUsage, loadError, loading, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
+  const { demands, getStorageUsage, loadError, loading, materials, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
+  const pdfEditorMode = pathname.startsWith("/materiais/editar/");
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const storagePercent = storageUsage
     ? Math.min(100, Math.round((storageUsage.usedBytes / storageUsage.limitBytes) * 100))
@@ -142,8 +143,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const materialEditorMatch = pathname.match(/^\/materiais\/editar\/([^/]+)/);
+    if (materialEditorMatch) {
+      const material = materials.find((item) => item.id === materialEditorMatch[1]);
+      document.title = material ? `UniFlow - Editar ${material.name}` : "UniFlow - Editor de PDF";
+      return;
+    }
+
     document.title = "UniFlow";
-  }, [demands, pathname, subjects]);
+  }, [demands, materials, pathname, subjects]);
 
   async function loadStorageStats() {
     setStorageLoading(true);
@@ -179,7 +187,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${pdfEditorMode ? "pdf-editor-shell" : ""}`}>
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand">
           <span>UniFlow</span>

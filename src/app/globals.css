@@ -275,8 +275,8 @@ h3 {
   width: min(1440px, 100%);
 }
 
-.content:has(.material-manager-panel) {
-  width: min(1320px, 100%);
+.content:has(.subject-page-header) {
+  width: min(1680px, 100%);
 }
 
 .page-header {
@@ -2535,7 +2535,7 @@ label {
 
 .material-browser {
   display: grid;
-  grid-template-columns: minmax(200px, 242px) minmax(0, 1fr);
+  grid-template-columns: var(--material-tree-width, 242px) 7px minmax(0, 1fr);
   min-height: 360px;
   overflow: hidden;
   border: 1px solid var(--line-soft);
@@ -2545,8 +2545,39 @@ label {
 
 .material-tree-panel {
   min-width: 0;
-  border-right: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.012);
+}
+
+.material-tree-resizer {
+  position: relative;
+  min-width: 7px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.material-tree-resizer::before {
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 1px;
+  background: var(--line-soft);
+  content: "";
+  transition: width 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+
+.material-tree-resizer:hover::before,
+.material-tree-resizer:focus-visible::before,
+body.is-resizing-material-tree .material-tree-resizer::before {
+  width: 2px;
+  background: var(--accent);
+  transform: translateX(-0.5px);
+}
+
+body.is-resizing-material-tree {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .material-tree-heading,
@@ -2943,6 +2974,8 @@ label {
 
 .grade-component-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
+  align-items: start;
   gap: 10px;
 }
 
@@ -3183,6 +3216,10 @@ label {
 
   .material-browser {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .material-tree-resizer {
+    display: none;
   }
 
   .material-tree-panel {

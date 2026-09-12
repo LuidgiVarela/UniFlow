@@ -167,31 +167,30 @@ export function GradeCriteriaManager({
             </div>
           </section>
         ))}
+        {uncategorized.length ? (
+          <section className="grade-component-card">
+            <div className="grade-component-header">
+              <div>
+                <strong>Sem critério</strong>
+                <small>Avaliações com nota, mas sem grupo configurado</small>
+              </div>
+              <div className="grade-component-score">
+                <strong>{directAverage === null ? "--" : directAverage.toFixed(1)}</strong>
+                <small>{directAverage === null ? "sem peso próprio" : "média ponderada"}</small>
+              </div>
+            </div>
+            <div className="grade-mini-list">
+              {uncategorized.map((assessment) => (
+                <article key={assessment.id}>
+                  <span>{assessment.name}</span>
+                  <small>{assessmentWeightText(assessment) ?? "sem peso"}</small>
+                  <strong>{scoreText(assessment)}</strong>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
-
-      {uncategorized.length ? (
-        <section className="grade-component-card">
-          <div className="grade-component-header">
-            <div>
-              <strong>Sem critério</strong>
-              <small>Avaliações com nota, mas sem grupo configurado</small>
-            </div>
-            <div className="grade-component-score">
-              <strong>{directAverage === null ? "--" : directAverage.toFixed(1)}</strong>
-              <small>{directAverage === null ? "sem peso próprio" : "média ponderada"}</small>
-            </div>
-          </div>
-          <div className="grade-mini-list">
-            {uncategorized.map((assessment) => (
-              <article key={assessment.id}>
-                <span>{assessment.name}</span>
-                <small>{assessmentWeightText(assessment) ?? "sem peso"}</small>
-                <strong>{scoreText(assessment)}</strong>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       {!subjectComponents.length && !gradedAssessments.length ? (
         <p className="muted compact-note">Nenhuma nota ainda. Crie critérios quando o professor explicar a fórmula.</p>

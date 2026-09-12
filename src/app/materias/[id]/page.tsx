@@ -48,6 +48,12 @@ import type { Assessment, Demand, Material, MaterialFolder } from "@/types/domai
 
 type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "grades" | "materials";
 
+const MATERIAL_TREE_DEFAULT_WIDTH = 242;
+const MATERIAL_TREE_MIN_WIDTH = 190;
+const MATERIAL_TREE_MAX_WIDTH = 460;
+const MATERIAL_TREE_CONTENT_MIN_WIDTH = 440;
+const MATERIAL_TREE_WIDTH_STORAGE_KEY = "uniflow:material-tree-width";
+
 const tabs: Array<{ id: SubjectTab; label: string; query: string }> = [
   { id: "overview", label: "Visão geral", query: "visao-geral" },
   { id: "tasks", label: "Tarefas", query: "tarefas" },
@@ -126,6 +132,13 @@ function isPdfMaterial(material: Material) {
   return /\.pdf$/i.test(material.name) || /\.pdf(?:$|\?)/i.test(material.file_path ?? "");
 }
 
+function clampMaterialTreeWidth(width: number, browserWidth?: number) {
+  const availableMaximum = browserWidth
+    ? Math.max(MATERIAL_TREE_MIN_WIDTH, browserWidth - MATERIAL_TREE_CONTENT_MIN_WIDTH)
+    : MATERIAL_TREE_MAX_WIDTH;
+  return Math.min(Math.min(MATERIAL_TREE_MAX_WIDTH, availableMaximum), Math.max(MATERIAL_TREE_MIN_WIDTH, width));
+}
+
 export default function SubjectDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -180,8 +193,12 @@ export default function SubjectDetailPage() {
   const [materialName, setMaterialName] = useState("");
   const [materialNameError, setMaterialNameError] = useState<string | null>(null);
   const [savingMaterialName, setSavingMaterialName] = useState(false);
+  const [materialTreeWidth, setMaterialTreeWidth] = useState(MATERIAL_TREE_DEFAULT_WIDTH);
   const breadcrumbRef = useRef<HTMLElement | null>(null);
   const folderActionsRef = useRef<HTMLDetailsElement | null>(null);
+  const materialBrowserRef = useRef<HTMLDivElement | null>(null);
+  const materialTreeWidthRef = useRef(MATERIAL_TREE_DEFAULT_WIDTH);
+  const materialTreeResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -269,6 +286,64 @@ export default function SubjectDetailPage() {
     return () => {
       document.removeEventListener("pointerdown", closeActionsMenu);
       document.removeEventListener("keydown", closeActionsMenu);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const storedWidth = Number(window.localStorage.getItem(MATERIAL_TREE_WIDTH_STORAGE_KEY));
+      if (!Number.isFinite(storedWidth) || storedWidth <= 0) return;
+      const browserWidth = window.matchMedia("(min-width: 721px)").matches
+        ? materialBrowserRef.current?.getBoundingClientRect().width
+        : undefined;
+      const nextWidth = clampMaterialTreeWidth(storedWidth, browserWidth);
+      materialTreeWidthRef.current = nextWidth;
+      setMaterialTreeWidth(nextWidth);
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
+    function resizeMaterialTree(event: PointerEvent) {
+      const resize = materialTreeResizeRef.current;
+      if (!resize) return;
+      const browserWidth = materialBrowserRef.current?.getBoundingClientRect().width;
+      const nextWidth = clampMaterialTreeWidth(resize.startWidth + event.clientX - resize.startX, browserWidth);
+      materialTreeWidthRef.current = nextWidth;
+      setMaterialTreeWidth(nextWidth);
+    }
+
+    function finishMaterialTreeResize() {
+      if (!materialTreeResizeRef.current) return;
+      materialTreeResizeRef.current = null;
+      document.body.classList.remove("is-resizing-material-tree");
+      try {
+        window.localStorage.setItem(MATERIAL_TREE_WIDTH_STORAGE_KEY, String(materialTreeWidthRef.current));
+      } catch {
+        return;
+      }
+    }
+
+    function constrainMaterialTree() {
+      if (!window.matchMedia("(min-width: 721px)").matches) return;
+      const browserWidth = materialBrowserRef.current?.getBoundingClientRect().width;
+      const nextWidth = clampMaterialTreeWidth(materialTreeWidthRef.current, browserWidth);
+      if (nextWidth === materialTreeWidthRef.current) return;
+      materialTreeWidthRef.current = nextWidth;
+      setMaterialTreeWidth(nextWidth);
+    }
+
+    window.addEventListener("pointermove", resizeMaterialTree);
+    window.addEventListener("pointerup", finishMaterialTreeResize);
+    window.addEventListener("pointercancel", finishMaterialTreeResize);
+    window.addEventListener("resize", constrainMaterialTree);
+    return () => {
+      window.removeEventListener("pointermove", resizeMaterialTree);
+      window.removeEventListener("pointerup", finishMaterialTreeResize);
+      window.removeEventListener("pointercancel", finishMaterialTreeResize);
+      window.removeEventListener("resize", constrainMaterialTree);
+      document.body.classList.remove("is-resizing-material-tree");
     };
   }, []);
 
@@ -410,6 +485,28 @@ export default function SubjectDetailPage() {
 
   function closeFolderActions() {
     folderActionsRef.current?.removeAttribute("open");
+  }
+
+  function saveMaterialTreeWidth(nextWidth: number) {
+    const browserWidth = materialBrowserRef.current?.getBoundingClientRect().width;
+    const width = clampMaterialTreeWidth(nextWidth, browserWidth);
+    materialTreeWidthRef.current = width;
+    setMaterialTreeWidth(width);
+    try {
+      window.localStorage.setItem(MATERIAL_TREE_WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      return;
+    }
+  }
+
+  function beginMaterialTreeResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    materialTreeResizeRef.current = {
+      startX: event.clientX,
+      startWidth: materialTreeWidthRef.current,
+    };
+    document.body.classList.add("is-resizing-material-tree");
   }
 
   function renderFolderTree(parentFolderId: string | null, depth = 0): React.ReactNode {
@@ -1197,7 +1294,11 @@ export default function SubjectDetailPage() {
           {zipStatus ? <p className="form-message material-zip-status">{zipStatus}</p> : null}
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
 
-          <div className="material-browser">
+          <div
+            className="material-browser"
+            ref={materialBrowserRef}
+            style={{ "--material-tree-width": `${materialTreeWidth}px` } as React.CSSProperties}
+          >
             <aside aria-label="Árvore de pastas" className="material-tree-panel">
               <div className="material-tree-heading">Pastas</div>
               <div className="material-tree" role="tree">
@@ -1217,6 +1318,38 @@ export default function SubjectDetailPage() {
                 </div>
               </div>
             </aside>
+
+            <div
+              aria-label="Redimensionar árvore de pastas"
+              aria-orientation="vertical"
+              aria-valuemax={MATERIAL_TREE_MAX_WIDTH}
+              aria-valuemin={MATERIAL_TREE_MIN_WIDTH}
+              aria-valuenow={Math.round(materialTreeWidth)}
+              className="material-tree-resizer"
+              onDoubleClick={() => saveMaterialTreeWidth(MATERIAL_TREE_DEFAULT_WIDTH)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  saveMaterialTreeWidth(materialTreeWidthRef.current - 16);
+                }
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  saveMaterialTreeWidth(materialTreeWidthRef.current + 16);
+                }
+                if (event.key === "Home") {
+                  event.preventDefault();
+                  saveMaterialTreeWidth(MATERIAL_TREE_MIN_WIDTH);
+                }
+                if (event.key === "End") {
+                  event.preventDefault();
+                  saveMaterialTreeWidth(MATERIAL_TREE_MAX_WIDTH);
+                }
+              }}
+              onPointerDown={beginMaterialTreeResize}
+              role="separator"
+              tabIndex={0}
+              title="Arraste para redimensionar; clique duas vezes para restaurar"
+            />
 
             <section aria-label={activeFolder?.name ?? "Materiais"} className="material-file-pane">
               <header className="material-file-pane-header">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit, ExternalLink, FilePenLine, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { Download, Edit, ExternalLink, FilePenLine, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, TextCursorInput, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -156,6 +156,10 @@ export default function SubjectDetailPage() {
   const [folderName, setFolderName] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
   const [savingFolder, setSavingFolder] = useState(false);
+  const [renamingMaterial, setRenamingMaterial] = useState<Material | null>(null);
+  const [materialName, setMaterialName] = useState("");
+  const [materialNameError, setMaterialNameError] = useState<string | null>(null);
+  const [savingMaterialName, setSavingMaterialName] = useState(false);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -497,6 +501,35 @@ export default function SubjectDetailPage() {
     }
   }
 
+  function openMaterialNameModal(material: Material) {
+    setRenamingMaterial(material);
+    setMaterialName(material.name);
+    setMaterialNameError(null);
+  }
+
+  async function saveMaterialName(event: React.FormEvent) {
+    event.preventDefault();
+    if (!renamingMaterial) return;
+    let nextName = materialName.trim();
+    if (!nextName) {
+      setMaterialNameError("Digite um nome para o material.");
+      return;
+    }
+    if (isPdfMaterial(renamingMaterial) && !/\.pdf$/i.test(nextName)) nextName = `${nextName}.pdf`;
+
+    setSavingMaterialName(true);
+    setMaterialNameError(null);
+    try {
+      await upsertMaterial({ ...renamingMaterial, name: nextName });
+      setRenamingMaterial(null);
+      setMaterialName("");
+    } catch (error) {
+      setMaterialNameError(error instanceof Error ? error.message : "Não foi possível renomear o material.");
+    } finally {
+      setSavingMaterialName(false);
+    }
+  }
+
   async function deleteMaterial(material: Material) {
     setMaterialError(null);
     setDeletingMaterialIds((current) => new Set(current).add(material.id));
@@ -746,6 +779,15 @@ export default function SubjectDetailPage() {
               <FilePenLine size={15} />
             </a>
           ) : null}
+          <button
+            className="icon-button"
+            disabled={isDeleting}
+            onClick={() => openMaterialNameModal(material)}
+            title="Renomear"
+            type="button"
+          >
+            <TextCursorInput size={15} />
+          </button>
           <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => deleteMaterial(material)} title="Excluir" type="button">
             {isDeleting ? null : <Trash2 size={15} />}
           </button>
@@ -1018,6 +1060,29 @@ export default function SubjectDetailPage() {
             {folderError ? <p className="form-message error-message">{folderError}</p> : null}
             <button className={`primary-button full ${savingFolder ? "is-loading" : ""}`} disabled={savingFolder} type="submit">
               {savingFolder ? "Salvando..." : editingFolder ? "Salvar nome" : "Criar pasta"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+      {renamingMaterial ? (
+        <div className="modal-backdrop">
+          <form className="modal form-stack compact-modal" onSubmit={saveMaterialName}>
+            <div className="modal-header">
+              <h2>{isPdfMaterial(renamingMaterial) ? "Renomear PDF" : "Renomear material"}</h2>
+              <button className="icon-button" onClick={() => setRenamingMaterial(null)} type="button">x</button>
+            </div>
+            <label>
+              Nome
+              <input
+                autoFocus
+                onChange={(event) => setMaterialName(event.target.value)}
+                value={materialName}
+                required
+              />
+            </label>
+            {materialNameError ? <p className="form-message error-message">{materialNameError}</p> : null}
+            <button className={`primary-button full ${savingMaterialName ? "is-loading" : ""}`} disabled={savingMaterialName} type="submit">
+              {savingMaterialName ? "Salvando..." : "Salvar nome"}
             </button>
           </form>
         </div>

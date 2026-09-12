@@ -1900,6 +1900,29 @@ label {
   background: #1a1a1d;
 }
 
+.pdf-pages-stack {
+  width: max-content;
+  min-width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 26px;
+}
+
+.pdf-page-shell {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.pdf-page-caption {
+  color: #9a9aa2;
+  font-size: 0.75rem;
+}
+
+.pdf-page-shell.current .pdf-page-stage {
+  box-shadow: 0 0 0 1px rgba(100, 162, 255, 0.65), 0 4px 24px rgba(0, 0, 0, 0.34);
+}
+
 .pdf-page-stage {
   position: relative;
   margin: 0 auto;
@@ -1907,16 +1930,23 @@ label {
   overflow: hidden;
   background: #ffffff;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.34);
-  touch-action: none;
+  touch-action: pan-y;
 }
 
-.pdf-page-stage.tool-text,
-.pdf-page-stage.tool-highlight {
+.pdf-pages-stack.tool-text .pdf-page-stage,
+.pdf-pages-stack.tool-highlight .pdf-page-stage {
   cursor: crosshair;
 }
 
-.pdf-page-stage.tool-draw {
+.pdf-pages-stack.tool-draw .pdf-page-stage {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M4 16L7 15L16 6L14 4L5 13Z' fill='none' stroke='%23111111' stroke-width='1.5'/%3E%3C/svg%3E") 2 18, crosshair;
+}
+
+.pdf-pages-stack.tool-draw .pdf-page-stage,
+.pdf-pages-stack.tool-highlight .pdf-page-stage,
+.pdf-annotation,
+.pdf-draw-selection {
+  touch-action: none;
 }
 
 .pdf-page-stage canvas,

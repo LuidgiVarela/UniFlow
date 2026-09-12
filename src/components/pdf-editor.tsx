@@ -26,12 +26,14 @@ import {
   useState,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { useAppData } from "@/components/data-provider";
 import type { Material } from "@/types/domain";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
 type EditorTool = "select" | "text" | "highlight" | "draw";
+type PdfFontName = "helvetica" | "helvetica-bold" | "times" | "times-bold" | "courier" | "courier-bold";
 
 type Point = {
   x: number;
@@ -52,6 +54,7 @@ type TextAnnotation = BoxAnnotationBase & {
   text: string;
   color: string;
   fontSize: number;
+  fontFamily: PdfFontName;
 };
 
 type ImageAnnotation = BoxAnnotationBase & {
@@ -86,9 +89,15 @@ type PageMetrics = {
   pdfHeight: number;
 };
 
+type PageDefinition = {
+  pdfWidth: number;
+  pdfHeight: number;
+};
+
 type Interaction = {
   kind: "move" | "resize" | "highlight" | "draw";
   annotationId: string;
+  pageIndex: number;
   before: Annotation[];
   startClientX: number;
   startClientY: number;
@@ -98,6 +107,14 @@ type Interaction = {
 
 const MAX_HISTORY = 60;
 const EMPTY_METRICS: PageMetrics = { width: 0, height: 0, pdfWidth: 0, pdfHeight: 0 };
+const PDF_FONT_OPTIONS: Array<{ value: PdfFontName; label: string; css: string }> = [
+  { value: "helvetica", label: "Helvetica", css: "Arial, Helvetica, sans-serif" },
+  { value: "helvetica-bold", label: "Helvetica Negrito", css: "Arial, Helvetica, sans-serif" },
+  { value: "times", label: "Times New Roman", css: "'Times New Roman', Times, serif" },
+  { value: "times-bold", label: "Times New Roman Negrito", css: "'Times New Roman', Times, serif" },
+  { value: "courier", label: "Courier", css: "'Courier New', Courier, monospace" },
+  { value: "courier-bold", label: "Courier Negrito", css: "'Courier New', Courier, monospace" },
+];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -174,6 +191,133 @@ function imageDimensions(dataUrl: string) {
   });
 }
 
+function metricsForPage(definition: PageDefinition | undefined, zoom: number): PageMetrics {
+  if (!definition) return EMPTY_METRICS;
+  return {
+    width: definition.pdfWidth * zoom,
+    height: definition.pdfHeight * zoom,
+    pdfWidth: definition.pdfWidth,
+    pdfHeight: definition.pdfHeight,
+  };
+}
+
+function textFontStyle(fontFamily: PdfFontName) {
+  const option = PDF_FONT_OPTIONS.find((item) => item.value === fontFamily) ?? PDF_FONT_OPTIONS[0];
+  return {
+    fontFamily: option.css,
+    fontWeight: fontFamily.endsWith("-bold") ? 700 : 400,
+  };
+}
+
+function PdfPageSurface({
+  children,
+  current,
+  definition,
+  onDefinition,
+  onError,
+  onPointerDown,
+  pageIndex,
+  pdfDocument,
+  registerStage,
+  zoom,
+}: {
+  children: ReactNode;
+  current: boolean;
+  definition: PageDefinition;
+  onDefinition: (pageIndex: number, definition: PageDefinition) => void;
+  onError: (message: string) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>, pageIndex: number) => void;
+  pageIndex: number;
+  pdfDocument: PDFDocumentProxy;
+  registerStage: (pageIndex: number, element: HTMLDivElement | null) => void;
+  zoom: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const renderTaskRef = useRef<RenderTask | null>(null);
+  const [nearViewport, setNearViewport] = useState(pageIndex === 0);
+  const [rendering, setRendering] = useState(false);
+  const metrics = metricsForPage(definition, zoom);
+
+  const setStage = useCallback((element: HTMLDivElement | null) => {
+    stageRef.current = element;
+    registerStage(pageIndex, element);
+  }, [pageIndex, registerStage]);
+
+  useEffect(() => {
+    const element = stageRef.current;
+    if (!element || nearViewport) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setNearViewport(true);
+      observer.disconnect();
+    }, { rootMargin: "900px 0px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [nearViewport]);
+
+  useEffect(() => {
+    if (!nearViewport) return;
+    let cancelled = false;
+
+    void Promise.resolve().then(async () => {
+      if (!cancelled) setRendering(true);
+      try {
+        const page = await pdfDocument.getPage(pageIndex + 1);
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        const viewport = page.getViewport({ scale: zoom });
+        const baseViewport = page.getViewport({ scale: 1 });
+        onDefinition(pageIndex, { pdfWidth: baseViewport.width, pdfHeight: baseViewport.height });
+        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+
+        renderTaskRef.current?.cancel();
+        const renderTask = page.render({
+          canvas,
+          viewport,
+          transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+        });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+      } catch (error) {
+        if (!cancelled && !(error instanceof Error && error.name === "RenderingCancelledException")) {
+          onError(error instanceof Error ? error.message : "Não foi possível exibir esta página.");
+        }
+      } finally {
+        if (!cancelled) setRendering(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+    };
+  }, [nearViewport, onDefinition, onError, pageIndex, pdfDocument, zoom]);
+
+  return (
+    <div className={`pdf-page-shell ${current ? "current" : ""}`}>
+      <div
+        aria-label={`Página ${pageIndex + 1}`}
+        className="pdf-page-stage"
+        data-page-index={pageIndex}
+        onPointerDown={(event) => onPointerDown(event, pageIndex)}
+        ref={setStage}
+        style={{ width: metrics.width, height: metrics.height }}
+      >
+        <canvas ref={canvasRef} />
+        <div className="pdf-annotation-layer">{children}</div>
+        {rendering ? <span className="pdf-page-rendering" aria-label="Renderizando página" /> : null}
+      </div>
+      <span className="pdf-page-caption">{pageIndex + 1}</span>
+    </div>
+  );
+}
+
 export function PdfEditor() {
   const params = useParams<{ id: string }>();
   const {
@@ -189,11 +333,11 @@ export function PdfEditor() {
   );
   const subject = material ? subjects.find((item) => item.id === material.subject_id) : null;
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const pageStageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const scrollFrameRef = useRef<number | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const pdfDocumentRef = useRef<PDFDocumentProxy | null>(null);
-  const renderTaskRef = useRef<RenderTask | null>(null);
   const originalBytesRef = useRef<ArrayBuffer | null>(null);
   const annotationsRef = useRef<Annotation[]>([]);
   const historyRef = useRef<Annotation[][]>([[]]);
@@ -204,11 +348,11 @@ export function PdfEditor() {
 
   const [documentReady, setDocumentReady] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
-  const [rendering, setRendering] = useState(false);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
-  const [pageMetrics, setPageMetrics] = useState<PageMetrics>(EMPTY_METRICS);
+  const [pageDefinitions, setPageDefinitions] = useState<PageDefinition[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState<Annotation[]>(annotations);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -220,10 +364,9 @@ export function PdfEditor() {
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const selectedAnnotation = annotations.find((annotation) => annotation.id === selectedId) ?? null;
-  const visibleAnnotations = annotations.filter((annotation) => annotation.pageIndex === pageNumber - 1);
   const isDirty = annotations !== savedSnapshot;
-  const editorReady = documentReady && pageMetrics.width > 0 && pageMetrics.height > 0;
-  const displayScale = pageMetrics.pdfWidth > 0 ? pageMetrics.width / pageMetrics.pdfWidth : 1;
+  const currentPageMetrics = metricsForPage(pageDefinitions[pageNumber - 1], zoom);
+  const editorReady = documentReady && pageDefinitions.length > 0;
 
   const replaceAnnotations = useCallback((next: Annotation[]) => {
     annotationsRef.current = next;
@@ -300,8 +443,9 @@ export function PdfEditor() {
     setDocumentReady(false);
     setDocumentError(null);
     setEditorError(null);
+    setPdfDocument(null);
     setPageCount(0);
-    setPageMetrics(EMPTY_METRICS);
+    setPageDefinitions([]);
     resetAnnotations();
 
     void Promise.resolve().then(async () => {
@@ -325,8 +469,13 @@ export function PdfEditor() {
           return;
         }
 
+        const firstPage = await pdfDocument.getPage(1);
+        const firstViewport = firstPage.getViewport({ scale: 1 });
+        const firstDefinition = { pdfWidth: firstViewport.width, pdfHeight: firstViewport.height };
         pdfDocumentRef.current = pdfDocument;
+        setPdfDocument(pdfDocument);
         setPageCount(pdfDocument.numPages);
+        setPageDefinitions(Array.from({ length: pdfDocument.numPages }, () => firstDefinition));
         setPageNumber(1);
         setDocumentReady(true);
       } catch (error) {
@@ -338,8 +487,6 @@ export function PdfEditor() {
 
     return () => {
       cancelled = true;
-      renderTaskRef.current?.cancel();
-      renderTaskRef.current = null;
       const currentDocument = pdfDocumentRef.current;
       pdfDocumentRef.current = null;
       if (currentDocument) void currentDocument.destroy();
@@ -347,59 +494,65 @@ export function PdfEditor() {
     };
   }, [appLoading, params.id, resetAnnotations]);
 
-  useEffect(() => {
-    if (!documentReady || !pdfDocumentRef.current) return;
+  const registerStage = useCallback((pageIndex: number, element: HTMLDivElement | null) => {
+    if (element) pageStageRefs.current.set(pageIndex, element);
+    else pageStageRefs.current.delete(pageIndex);
+  }, []);
 
-    let cancelled = false;
-    setRendering(true);
+  const updatePageDefinition = useCallback((pageIndex: number, definition: PageDefinition) => {
+    setPageDefinitions((current) => {
+      const previous = current[pageIndex];
+      if (
+        previous &&
+        Math.abs(previous.pdfWidth - definition.pdfWidth) < 0.01 &&
+        Math.abs(previous.pdfHeight - definition.pdfHeight) < 0.01
+      ) return current;
+      const next = [...current];
+      next[pageIndex] = definition;
+      return next;
+    });
+  }, []);
 
-    void Promise.resolve().then(async () => {
-      try {
-        const page = await pdfDocumentRef.current?.getPage(pageNumber);
-        const canvas = canvasRef.current;
-        if (!page || !canvas || cancelled) return;
+  const handlePageRenderError = useCallback((message: string) => {
+    setEditorError(message);
+  }, []);
 
-        const viewport = page.getViewport({ scale: zoom });
-        const baseViewport = page.getViewport({ scale: 1 });
-        const outputScale = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        setPageMetrics({
-          width: viewport.width,
-          height: viewport.height,
-          pdfWidth: baseViewport.width,
-          pdfHeight: baseViewport.height,
-        });
+  const updateCurrentPageFromScroll = useCallback(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const workspaceRect = workspace.getBoundingClientRect();
+    const viewportCenter = (workspaceRect.top + workspaceRect.bottom) / 2;
+    let closestPage = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
 
-        renderTaskRef.current?.cancel();
-        const renderTask = page.render({
-          canvas,
-          viewport,
-          transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
-        });
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
-      } catch (error) {
-        if (!cancelled && !(error instanceof Error && error.name === "RenderingCancelledException")) {
-          setEditorError(error instanceof Error ? error.message : "Não foi possível exibir esta página.");
-        }
-      } finally {
-        if (!cancelled) setRendering(false);
+    pageStageRefs.current.forEach((element, index) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom < workspaceRect.top || rect.top > workspaceRect.bottom) return;
+      const distance = Math.abs((rect.top + rect.bottom) / 2 - viewportCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestPage = index;
       }
     });
 
-    return () => {
-      cancelled = true;
-      renderTaskRef.current?.cancel();
-      renderTaskRef.current = null;
-    };
-  }, [documentReady, pageNumber, zoom]);
+    setPageNumber((current) => current === closestPage + 1 ? current : closestPage + 1);
+  }, []);
+
+  function handleWorkspaceScroll() {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      updateCurrentPageFromScroll();
+    });
+  }
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   useEffect(() => {
-    function pointFromClient(clientX: number, clientY: number) {
-      const rect = stageRef.current?.getBoundingClientRect();
+    function pointFromClient(clientX: number, clientY: number, pageIndex: number) {
+      const rect = pageStageRefs.current.get(pageIndex)?.getBoundingClientRect();
       if (!rect) return null;
       return {
         x: clamp((clientX - rect.left) / rect.width, 0, 1),
@@ -409,10 +562,12 @@ export function PdfEditor() {
 
     function handlePointerMove(event: PointerEvent) {
       const interaction = interactionRef.current;
-      const rect = stageRef.current?.getBoundingClientRect();
+      const rect = interaction
+        ? pageStageRefs.current.get(interaction.pageIndex)?.getBoundingClientRect()
+        : null;
       if (!interaction || !rect) return;
 
-      const point = pointFromClient(event.clientX, event.clientY);
+      const point = pointFromClient(event.clientX, event.clientY, interaction.pageIndex);
       if (!point) return;
 
       if (interaction.kind === "highlight" && interaction.startPoint) {
@@ -489,9 +644,10 @@ export function PdfEditor() {
       if (interaction.kind === "resize" && original.type !== "draw") {
         const nextWidth = clamp(original.width + deltaX, 0.035, 1 - original.x);
         let nextHeight = clamp(original.height + deltaY, 0.02, 1 - original.y);
-        if (original.type === "image" && pageMetrics.pdfHeight > 0) {
+        const metrics = metricsForPage(pageDefinitions[interaction.pageIndex], zoom);
+        if (original.type === "image" && metrics.pdfHeight > 0) {
           nextHeight = clamp(
-            (nextWidth * pageMetrics.pdfWidth) / (original.aspectRatio * pageMetrics.pdfHeight),
+            (nextWidth * metrics.pdfWidth) / (original.aspectRatio * metrics.pdfHeight),
             0.02,
             1 - original.y,
           );
@@ -543,7 +699,7 @@ export function PdfEditor() {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [commitAnnotations, pageMetrics.pdfHeight, pageMetrics.pdfWidth, replaceAnnotations]);
+  }, [commitAnnotations, pageDefinitions, replaceAnnotations, zoom]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -590,9 +746,11 @@ export function PdfEditor() {
     };
   }
 
-  function handleStagePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || rendering) return;
+  function handleStagePointerDown(event: ReactPointerEvent<HTMLDivElement>, pageIndex: number) {
+    if (event.button !== 0) return;
     const point = pointFromEvent(event);
+    const metrics = metricsForPage(pageDefinitions[pageIndex], zoom);
+    setPageNumber(pageIndex + 1);
     setEditorError(null);
 
     if (tool === "select") {
@@ -602,10 +760,10 @@ export function PdfEditor() {
 
     if (tool === "text") {
       const width = 0.3;
-      const height = Math.max(0.035, (22 * 1.45) / Math.max(pageMetrics.pdfHeight, 1));
+      const height = Math.max(0.035, (22 * 1.45) / Math.max(metrics.pdfHeight, 1));
       const annotation: TextAnnotation = {
         id: crypto.randomUUID(),
-        pageIndex: pageNumber - 1,
+        pageIndex,
         type: "text",
         x: clamp(point.x, 0, 1 - width),
         y: clamp(point.y, 0, 1 - height),
@@ -614,6 +772,7 @@ export function PdfEditor() {
         text: "Novo texto",
         color: "#111111",
         fontSize: 18,
+        fontFamily: "helvetica",
       };
       commitAnnotations([...annotationsRef.current, annotation]);
       setSelectedId(annotation.id);
@@ -624,7 +783,7 @@ export function PdfEditor() {
     if (tool === "highlight") {
       const annotation: HighlightAnnotation = {
         id: crypto.randomUUID(),
-        pageIndex: pageNumber - 1,
+        pageIndex,
         type: "highlight",
         x: point.x,
         y: point.y,
@@ -639,6 +798,7 @@ export function PdfEditor() {
       interactionRef.current = {
         kind: "highlight",
         annotationId: annotation.id,
+        pageIndex,
         before,
         startClientX: event.clientX,
         startClientY: event.clientY,
@@ -649,7 +809,7 @@ export function PdfEditor() {
 
     const annotation: DrawAnnotation = {
       id: crypto.randomUUID(),
-      pageIndex: pageNumber - 1,
+      pageIndex,
       type: "draw",
       color: "#ef4444",
       opacity: 1,
@@ -662,6 +822,7 @@ export function PdfEditor() {
     interactionRef.current = {
       kind: "draw",
       annotationId: annotation.id,
+      pageIndex,
       before,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -671,11 +832,13 @@ export function PdfEditor() {
   function beginMove(event: ReactPointerEvent, annotation: Annotation) {
     event.stopPropagation();
     setSelectedId(annotation.id);
+    setPageNumber(annotation.pageIndex + 1);
     if (tool !== "select" || event.button !== 0) return;
     event.preventDefault();
     interactionRef.current = {
       kind: "move",
       annotationId: annotation.id,
+      pageIndex: annotation.pageIndex,
       before: annotationsRef.current,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -689,6 +852,7 @@ export function PdfEditor() {
     interactionRef.current = {
       kind: "resize",
       annotationId: annotation.id,
+      pageIndex: annotation.pageIndex,
       before: annotationsRef.current,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -710,10 +874,10 @@ export function PdfEditor() {
       const dimensions = await imageDimensions(dataUrl);
       const aspectRatio = dimensions.width / dimensions.height;
       let width = 0.38;
-      let height = (width * pageMetrics.pdfWidth) / (aspectRatio * pageMetrics.pdfHeight);
+      let height = (width * currentPageMetrics.pdfWidth) / (aspectRatio * currentPageMetrics.pdfHeight);
       if (height > 0.55) {
         height = 0.55;
-        width = (height * aspectRatio * pageMetrics.pdfHeight) / pageMetrics.pdfWidth;
+        width = (height * aspectRatio * currentPageMetrics.pdfHeight) / currentPageMetrics.pdfWidth;
       }
       const annotation: ImageAnnotation = {
         id: crypto.randomUUID(),
@@ -748,9 +912,10 @@ export function PdfEditor() {
   }
 
   function changeImageWidth(annotation: ImageAnnotation, widthPercent: number) {
+    const metrics = metricsForPage(pageDefinitions[annotation.pageIndex], zoom);
     const width = clamp(widthPercent / 100, 0.035, 1 - annotation.x);
     const height = clamp(
-      (width * pageMetrics.pdfWidth) / (annotation.aspectRatio * pageMetrics.pdfHeight),
+      (width * metrics.pdfWidth) / (annotation.aspectRatio * metrics.pdfHeight),
       0.02,
       1 - annotation.y,
     );
@@ -769,7 +934,15 @@ export function PdfEditor() {
     try {
       const { LineCapStyle, PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const pdfDocument = await PDFDocument.load(originalBytes.slice(0));
-      const font = await pdfDocument.embedFont(StandardFonts.Helvetica);
+      const standardFontNames = {
+        helvetica: StandardFonts.Helvetica,
+        "helvetica-bold": StandardFonts.HelveticaBold,
+        times: StandardFonts.TimesRoman,
+        "times-bold": StandardFonts.TimesRomanBold,
+        courier: StandardFonts.Courier,
+        "courier-bold": StandardFonts.CourierBold,
+      } satisfies Record<PdfFontName, string>;
+      const embeddedFonts = new Map<PdfFontName, Awaited<ReturnType<typeof pdfDocument.embedFont>>>();
       const embeddedImages = new Map<string, Awaited<ReturnType<typeof pdfDocument.embedPng>>>();
 
       for (const annotation of annotationsRef.current) {
@@ -781,6 +954,12 @@ export function PdfEditor() {
 
         if (annotation.type === "text") {
           if (!annotation.text.trim()) continue;
+          const fontFamily = annotation.fontFamily ?? "helvetica";
+          let font = embeddedFonts.get(fontFamily);
+          if (!font) {
+            font = await pdfDocument.embedFont(standardFontNames[fontFamily]);
+            embeddedFonts.set(fontFamily, font);
+          }
           page.drawText(annotation.text, {
             x: annotation.x * pageWidth,
             y: pageHeight - annotation.y * pageHeight - annotation.fontSize,
@@ -862,12 +1041,18 @@ export function PdfEditor() {
   }
 
   function changePage(nextPage: number) {
+    const targetPage = clamp(Math.round(nextPage), 1, Math.max(pageCount, 1));
     setSelectedId(null);
-    setPageNumber(clamp(Math.round(nextPage), 1, Math.max(pageCount, 1)));
+    setPageNumber(targetPage);
+    pageStageRefs.current.get(targetPage - 1)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function renderBoxAnnotation(annotation: TextAnnotation | ImageAnnotation | HighlightAnnotation) {
+  function renderBoxAnnotation(
+    annotation: TextAnnotation | ImageAnnotation | HighlightAnnotation,
+    metrics: PageMetrics,
+  ) {
     const selected = annotation.id === selectedId;
+    const displayScale = metrics.pdfWidth > 0 ? metrics.width / metrics.pdfWidth : 1;
     const style = {
       left: `${annotation.x * 100}%`,
       top: `${annotation.y * 100}%`,
@@ -883,7 +1068,11 @@ export function PdfEditor() {
         style={style}
       >
         {annotation.type === "text" ? (
-          <span style={{ color: annotation.color, fontSize: `${annotation.fontSize * displayScale}px` }}>
+          <span style={{
+            color: annotation.color,
+            fontSize: `${annotation.fontSize * displayScale}px`,
+            ...textFontStyle(annotation.fontFamily ?? "helvetica"),
+          }}>
             {annotation.text || "Texto"}
           </span>
         ) : null}
@@ -909,14 +1098,15 @@ export function PdfEditor() {
     );
   }
 
-  function renderDrawAnnotation(annotation: DrawAnnotation) {
+  function renderDrawAnnotation(annotation: DrawAnnotation, metrics: PageMetrics) {
     const selected = annotation.id === selectedId;
-    const points = annotation.points.map((point) => `${point.x * pageMetrics.width},${point.y * pageMetrics.height}`).join(" ");
+    const displayScale = metrics.pdfWidth > 0 ? metrics.width / metrics.pdfWidth : 1;
+    const points = annotation.points.map((point) => `${point.x * metrics.width},${point.y * metrics.height}`).join(" ");
     const bounds = drawBounds(annotation);
 
     return (
       <div className={`pdf-draw-layer ${selected ? "selected" : ""}`} key={annotation.id}>
-        <svg aria-hidden viewBox={`0 0 ${pageMetrics.width} ${pageMetrics.height}`}>
+        <svg aria-hidden viewBox={`0 0 ${metrics.width} ${metrics.height}`}>
           <polyline
             fill="none"
             onPointerDown={(event) => beginMove(event, annotation)}
@@ -1086,7 +1276,7 @@ export function PdfEditor() {
       </div>
 
       <div className="pdf-editor-body">
-        <div className="pdf-editor-workspace">
+        <div className="pdf-editor-workspace" onScroll={handleWorkspaceScroll} ref={workspaceRef}>
           {documentError ? (
             <div className="pdf-editor-empty">
               <FileText size={28} />
@@ -1097,22 +1287,32 @@ export function PdfEditor() {
             <div className="pdf-editor-empty is-loading">
               <strong>Abrindo PDF...</strong>
             </div>
-          ) : (
-            <div
-              className={`pdf-page-stage tool-${tool}`}
-              onPointerDown={handleStagePointerDown}
-              ref={stageRef}
-              style={{ width: pageMetrics.width, height: pageMetrics.height }}
-            >
-              <canvas ref={canvasRef} />
-              <div className="pdf-annotation-layer">
-                {visibleAnnotations.map((annotation) => annotation.type === "draw"
-                  ? renderDrawAnnotation(annotation)
-                  : renderBoxAnnotation(annotation))}
-              </div>
-              {rendering ? <span className="pdf-page-rendering" aria-label="Renderizando página" /> : null}
+          ) : pdfDocument ? (
+            <div className={`pdf-pages-stack tool-${tool}`}>
+              {pageDefinitions.map((definition, pageIndex) => {
+                const metrics = metricsForPage(definition, zoom);
+                const pageAnnotations = annotations.filter((annotation) => annotation.pageIndex === pageIndex);
+                return (
+                  <PdfPageSurface
+                    current={pageNumber === pageIndex + 1}
+                    definition={definition}
+                    key={pageIndex}
+                    onDefinition={updatePageDefinition}
+                    onError={handlePageRenderError}
+                    onPointerDown={handleStagePointerDown}
+                    pageIndex={pageIndex}
+                    pdfDocument={pdfDocument}
+                    registerStage={registerStage}
+                    zoom={zoom}
+                  >
+                    {pageAnnotations.map((annotation) => annotation.type === "draw"
+                      ? renderDrawAnnotation(annotation, metrics)
+                      : renderBoxAnnotation(annotation, metrics))}
+                  </PdfPageSurface>
+                );
+              })}
             </div>
-          )}
+          ) : null}
         </div>
 
         <aside className="pdf-editor-inspector">
@@ -1150,6 +1350,21 @@ export function PdfEditor() {
                   value={selectedAnnotation.color}
                 />
               </label>
+              <label>Fonte
+                <select
+                  onChange={(event) => updateAnnotation(
+                    selectedAnnotation.id,
+                    (annotation) => annotation.type === "text"
+                      ? { ...annotation, fontFamily: event.target.value as PdfFontName }
+                      : annotation,
+                  )}
+                  value={selectedAnnotation.fontFamily ?? "helvetica"}
+                >
+                  {PDF_FONT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
               <label>Tamanho <strong>{Math.round(selectedAnnotation.fontSize)} pt</strong>
                 <input
                   max={54}
@@ -1162,7 +1377,11 @@ export function PdfEditor() {
                       return {
                         ...annotation,
                         fontSize,
-                        height: Math.max(annotation.height, (fontSize * 1.45) / Math.max(pageMetrics.pdfHeight, 1)),
+                        height: Math.max(
+                          annotation.height,
+                          (fontSize * 1.45) /
+                            Math.max(pageDefinitions[annotation.pageIndex]?.pdfHeight ?? 0, 1),
+                        ),
                       };
                     },
                   )}

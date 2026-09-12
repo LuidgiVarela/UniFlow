@@ -719,6 +719,10 @@ label {
   width: min(520px, 100%);
 }
 
+.pdf-edit-modal {
+  width: min(620px, 100%);
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -1600,6 +1604,10 @@ label {
 .material-row.dragging {
   opacity: 0.52;
   transform: scale(0.99);
+}
+
+.material-row:has(.icon-button.is-loading) {
+  opacity: 0.72;
 }
 
 .material-row.drag-over {

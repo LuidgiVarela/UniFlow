@@ -458,6 +458,7 @@ export function PdfEditor() {
   const copiedAnnotationRef = useRef<Annotation | null>(null);
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const saveControlRef = useRef<HTMLDivElement | null>(null);
+  const zoomControlRef = useRef<HTMLDivElement | null>(null);
   const getMaterialUrlRef = useRef(getMaterialUrl);
   const materialRef = useRef(material);
 
@@ -467,6 +468,8 @@ export function PdfEditor() {
   const [pageCount, setPageCount] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
+  const [zoomDraft, setZoomDraft] = useState("100");
+  const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [pageDefinitions, setPageDefinitions] = useState<PageDefinition[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState<Annotation[]>(annotations);
@@ -490,7 +493,7 @@ export function PdfEditor() {
   const isDirty = annotations !== savedSnapshot;
   const currentPageMetrics = metricsForPage(pageDefinitions[pageNumber - 1], zoom);
   const editorReady = documentReady && pageDefinitions.length > 0;
-  const editorBodyStyle = {
+  const editorLayoutStyle = {
     "--pdf-inspector-width": `${inspectorWidth}px`,
   } as CSSProperties;
 
@@ -901,6 +904,7 @@ export function PdfEditor() {
         setSelectedId(null);
         setEditingTextId(null);
         setSaveMenuOpen(false);
+        setZoomMenuOpen(false);
         setTool("select");
       }
     }
@@ -927,6 +931,15 @@ export function PdfEditor() {
     document.addEventListener("pointerdown", closeSaveMenu);
     return () => document.removeEventListener("pointerdown", closeSaveMenu);
   }, [saveMenuOpen]);
+
+  useEffect(() => {
+    if (!zoomMenuOpen) return;
+    function closeZoomMenu(event: PointerEvent) {
+      if (!zoomControlRef.current?.contains(event.target as Node)) setZoomMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", closeZoomMenu);
+    return () => document.removeEventListener("pointerdown", closeZoomMenu);
+  }, [zoomMenuOpen]);
 
   useEffect(() => {
     function handleInspectorResize(event: PointerEvent) {
@@ -1319,6 +1332,35 @@ export function PdfEditor() {
     }
   }
 
+  function applyZoom(nextZoom: number) {
+    const safeZoom = clamp(nextZoom, 0.4, 3);
+    setZoom(safeZoom);
+    setZoomDraft(String(Math.round(safeZoom * 100)));
+  }
+
+  function applyZoomDraft() {
+    const percentage = Number.parseFloat(zoomDraft.replace(",", "."));
+    if (!Number.isFinite(percentage)) {
+      setZoomDraft(String(Math.round(zoom * 100)));
+      return;
+    }
+    applyZoom(percentage / 100);
+  }
+
+  function fitZoom(mode: "width" | "page") {
+    const workspace = workspaceRef.current;
+    const definition = pageDefinitions[pageNumber - 1];
+    if (!workspace || !definition) return;
+    const availableWidth = Math.max(workspace.clientWidth - 68, 120);
+    const availableHeight = Math.max(workspace.clientHeight - 68, 120);
+    const widthZoom = availableWidth / definition.pdfWidth;
+    const nextZoom = mode === "width"
+      ? widthZoom
+      : Math.min(widthZoom, availableHeight / definition.pdfHeight);
+    applyZoom(nextZoom);
+    setZoomMenuOpen(false);
+  }
+
   function changePage(nextPage: number) {
     const targetPage = clamp(Math.round(nextPage), 1, Math.max(pageCount, 1));
     setSelectedId(null);
@@ -1550,7 +1592,7 @@ export function PdfEditor() {
   }
 
   return (
-    <section className="pdf-editor-page">
+    <section className="pdf-editor-page" style={editorLayoutStyle}>
       <header className="pdf-editor-header">
         <div className="pdf-editor-file">
           <FileText size={20} />
@@ -1603,7 +1645,8 @@ export function PdfEditor() {
       </header>
 
       <div className="pdf-editor-toolbar" role="toolbar" aria-label="Ferramentas do editor de PDF">
-        <div className="pdf-toolbar-group">
+        <div className="pdf-toolbar-zone pdf-toolbar-left">
+          <div className="pdf-toolbar-group">
           <button
             aria-pressed={tool === "select"}
             className={`pdf-tool-button ${tool === "select" ? "active" : ""}`}
@@ -1663,10 +1706,12 @@ export function PdfEditor() {
           >
             <Eraser size={16} /><span>Borracha</span>
           </button>
+          </div>
         </div>
 
-        {tool === "draw" ? (
-          <div className="pdf-toolbar-group pdf-draw-tools">
+        <div className="pdf-toolbar-zone pdf-toolbar-right">
+          {tool === "draw" ? (
+            <div className="pdf-toolbar-group pdf-draw-tools">
             <select
               aria-label="Tipo de desenho"
               onChange={(event) => setDrawStyle(event.target.value as DrawStyle)}
@@ -1690,28 +1735,30 @@ export function PdfEditor() {
                 value={drawThickness}
               />
             </label>
+            </div>
+          ) : null}
+
+          <div className="pdf-toolbar-group pdf-clipboard-tools">
+            <button className="icon-button" disabled={!selectedAnnotation} onClick={copySelected} title="Copiar edição" type="button">
+              <Copy size={16} />
+            </button>
+            <button className="icon-button" disabled={!hasCopiedAnnotation} onClick={() => pasteCopied(pageNumber - 1)} title="Colar na página atual" type="button">
+              <ClipboardPaste size={16} />
+            </button>
           </div>
-        ) : null}
 
-        <div className="pdf-toolbar-group pdf-clipboard-tools">
-          <button className="icon-button" disabled={!selectedAnnotation} onClick={copySelected} title="Copiar edição" type="button">
-            <Copy size={16} />
-          </button>
-          <button className="icon-button" disabled={!hasCopiedAnnotation} onClick={() => pasteCopied(pageNumber - 1)} title="Colar na página atual" type="button">
-            <ClipboardPaste size={16} />
-          </button>
+          <div className="pdf-toolbar-group pdf-history-tools">
+            <button className="icon-button" disabled={historyCursor <= 0} onClick={undo} title="Desfazer" type="button">
+              <Undo2 size={17} />
+            </button>
+            <button className="icon-button" disabled={historyCursor >= historyLength - 1} onClick={redo} title="Refazer" type="button">
+              <Redo2 size={17} />
+            </button>
+          </div>
         </div>
 
-        <div className="pdf-toolbar-group pdf-history-tools">
-          <button className="icon-button" disabled={historyCursor <= 0} onClick={undo} title="Desfazer" type="button">
-            <Undo2 size={17} />
-          </button>
-          <button className="icon-button" disabled={historyCursor >= historyLength - 1} onClick={redo} title="Refazer" type="button">
-            <Redo2 size={17} />
-          </button>
-        </div>
-
-        <div className="pdf-toolbar-group pdf-page-tools">
+        <div className="pdf-toolbar-zone pdf-document-tools">
+          <div className="pdf-toolbar-group pdf-page-tools">
           <button className="icon-button" disabled={pageNumber <= 1} onClick={() => changePage(pageNumber - 1)} title="Página anterior" type="button">
             <ChevronLeft size={18} />
           </button>
@@ -1730,20 +1777,69 @@ export function PdfEditor() {
           <button className="icon-button" disabled={pageNumber >= pageCount} onClick={() => changePage(pageNumber + 1)} title="Próxima página" type="button">
             <ChevronRight size={18} />
           </button>
+          </div>
+
+          <div className="pdf-toolbar-group pdf-zoom-tools" ref={zoomControlRef}>
+            <button className="icon-button" disabled={zoom <= 0.4} onClick={() => applyZoom(zoom - 0.1)} title="Diminuir zoom" type="button">
+              <ZoomOut size={17} />
+            </button>
+            <div className="pdf-zoom-picker">
+              <label className="pdf-zoom-field">
+                <input
+                  aria-label="Percentual de zoom"
+                  disabled={!editorReady}
+                  inputMode="decimal"
+                  maxLength={5}
+                  onBlur={applyZoomDraft}
+                  onChange={(event) => setZoomDraft(event.target.value.replace(/[^0-9,.]/g, ""))}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                    if (event.key === "Escape") {
+                      setZoomDraft(String(Math.round(zoom * 100)));
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  type="text"
+                  value={zoomDraft}
+                />
+                <span>%</span>
+              </label>
+              <button
+                aria-expanded={zoomMenuOpen}
+                className="pdf-zoom-menu-button"
+                disabled={!editorReady}
+                onClick={() => setZoomMenuOpen((current) => !current)}
+                title="Opções de zoom"
+                type="button"
+              >
+                <ChevronDown size={14} />
+              </button>
+              {zoomMenuOpen ? (
+                <div className="pdf-zoom-menu" role="menu">
+                  <button onClick={() => fitZoom("width")} role="menuitem" type="button">Ajustar à largura</button>
+                  <button onClick={() => fitZoom("page")} role="menuitem" type="button">Ajustar à página</button>
+                  {[75, 100, 125, 150, 200].map((percentage) => (
+                    <button key={percentage} onClick={() => {
+                      applyZoom(percentage / 100);
+                      setZoomMenuOpen(false);
+                    }} role="menuitem" type="button">
+                      {percentage}%
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <button className="icon-button" disabled={zoom >= 3} onClick={() => applyZoom(zoom + 0.1)} title="Aumentar zoom" type="button">
+              <ZoomIn size={17} />
+            </button>
+          </div>
         </div>
 
-        <div className="pdf-toolbar-group pdf-zoom-tools">
-          <button className="icon-button" disabled={zoom <= 0.6} onClick={() => setZoom((current) => clamp(current - 0.1, 0.6, 2.4))} title="Diminuir zoom" type="button">
-            <ZoomOut size={17} />
-          </button>
-          <span>{Math.round(zoom * 100)}%</span>
-          <button className="icon-button" disabled={zoom >= 2.4} onClick={() => setZoom((current) => clamp(current + 0.1, 0.6, 2.4))} title="Aumentar zoom" type="button">
-            <ZoomIn size={17} />
-          </button>
-        </div>
+        <span aria-hidden className="pdf-toolbar-inspector-space" />
       </div>
 
-      <div className="pdf-editor-body" style={editorBodyStyle}>
+      <div className="pdf-editor-body">
         <div className="pdf-editor-workspace" onScroll={handleWorkspaceScroll} ref={workspaceRef}>
           {documentError ? (
             <div className="pdf-editor-empty">

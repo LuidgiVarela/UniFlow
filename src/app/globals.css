@@ -1850,10 +1850,38 @@ label {
   padding: 7px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) calc(var(--pdf-inspector-width, 300px) + 6px);
+  align-items: center;
+  gap: 12px;
+  overflow: visible;
+}
+
+.pdf-toolbar-zone {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 9px;
-  overflow-x: auto;
+  gap: 3px;
+}
+
+.pdf-toolbar-left {
+  grid-column: 1;
+  justify-content: flex-start;
+}
+
+.pdf-document-tools {
+  grid-column: 2;
+  justify-content: center;
+}
+
+.pdf-toolbar-right {
+  grid-column: 3;
+  justify-content: flex-end;
+}
+
+.pdf-toolbar-inspector-space {
+  grid-column: 4;
+  width: 100%;
 }
 
 .pdf-toolbar-group {
@@ -1949,10 +1977,6 @@ label {
   height: 34px;
 }
 
-.pdf-page-tools {
-  margin-left: auto;
-}
-
 .pdf-page-field {
   min-width: 82px;
   display: flex;
@@ -1970,11 +1994,88 @@ label {
   text-align: center;
 }
 
-.pdf-zoom-tools > span {
-  width: 46px;
-  color: var(--muted);
+.pdf-zoom-picker {
+  position: relative;
+  height: 34px;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--background);
+}
+
+.pdf-zoom-field {
+  width: 58px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.pdf-zoom-field input {
+  width: 39px;
+  min-height: 32px;
+  padding: 3px 1px 3px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
   font-size: 0.78rem;
-  text-align: center;
+  text-align: right;
+}
+
+.pdf-zoom-field input:focus {
+  outline: 0;
+}
+
+.pdf-zoom-field span {
+  width: 18px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.pdf-zoom-menu-button {
+  width: 26px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.pdf-zoom-menu-button:hover {
+  color: var(--foreground);
+  background: var(--surface-strong);
+}
+
+.pdf-zoom-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 7px);
+  left: 50%;
+  width: 170px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #151517;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+  display: grid;
+  transform: translateX(-50%);
+}
+
+.pdf-zoom-menu button {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.pdf-zoom-menu button:hover {
+  background: var(--surface-strong);
 }
 
 .pdf-editor-body {
@@ -2616,6 +2717,30 @@ label {
 
 .mobile-only {
   display: none;
+}
+
+@media (max-width: 1680px) {
+  .pdf-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .pdf-toolbar-left {
+    order: 1;
+  }
+
+  .pdf-document-tools {
+    order: 2;
+  }
+
+  .pdf-toolbar-right {
+    order: 3;
+  }
+
+  .pdf-toolbar-inspector-space {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {

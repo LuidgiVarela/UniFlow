@@ -130,6 +130,22 @@ const DRAW_STYLE_OPTIONS: Array<{ value: DrawStyle; label: string }> = [
   { value: "arrow", label: "Seta" },
   { value: "rectangle", label: "Retangulo" },
 ];
+const PDF_TEXT_REPLACEMENTS: Record<string, string> = {
+  "−": "-",
+  "→": "->",
+  "←": "<-",
+  "↔": "<->",
+  "⇒": "=>",
+  "⇐": "<=",
+  "≤": "<=",
+  "≥": ">=",
+  "≠": "!=",
+  "≈": "~",
+  "∞": "infinito",
+  "✓": "v",
+  "✗": "x",
+  "✘": "x",
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -265,6 +281,43 @@ function textFontStyle(fontFamily: PdfFontName) {
     fontFamily: option.css,
     fontWeight: fontFamily.endsWith("-bold") ? 700 : 400,
   };
+}
+
+function pdfSafeText(text: string, characterSet: number[]) {
+  const supported = new Set(characterSet);
+  let changed = false;
+  let result = "";
+
+  for (const character of text) {
+    if (character === "\n" || character === "\r") {
+      result += character;
+      continue;
+    }
+    if (character === "\t") {
+      result += "    ";
+      changed = true;
+      continue;
+    }
+
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && supported.has(codePoint)) {
+      result += character;
+      continue;
+    }
+
+    const replacement = PDF_TEXT_REPLACEMENTS[character]
+      ?? character.normalize("NFKD").replace(/\p{Mark}/gu, "");
+    const safeReplacement = Array.from(replacement)
+      .map((item) => {
+        const replacementCodePoint = item.codePointAt(0);
+        return replacementCodePoint !== undefined && supported.has(replacementCodePoint) ? item : "?";
+      })
+      .join("");
+    result += safeReplacement || "?";
+    changed = true;
+  }
+
+  return { changed, text: result };
 }
 
 function PdfPageSurface({
@@ -1128,6 +1181,7 @@ export function PdfEditor() {
       } satisfies Record<PdfFontName, string>;
       const embeddedFonts = new Map<PdfFontName, Awaited<ReturnType<typeof pdfDocument.embedFont>>>();
       const embeddedImages = new Map<string, Awaited<ReturnType<typeof pdfDocument.embedPng>>>();
+      let adaptedText = false;
 
       for (const annotation of annotationsRef.current) {
         const page = pdfDocument.getPage(annotation.pageIndex);
@@ -1144,7 +1198,9 @@ export function PdfEditor() {
             font = await pdfDocument.embedFont(standardFontNames[fontFamily]);
             embeddedFonts.set(fontFamily, font);
           }
-          page.drawText(annotation.text, {
+          const safeText = pdfSafeText(annotation.text, font.getCharacterSet());
+          adaptedText ||= safeText.changed;
+          page.drawText(safeText.text, {
             x: annotation.x * pageWidth,
             y: pageHeight - annotation.y * pageHeight - annotation.fontSize,
             size: annotation.fontSize,
@@ -1249,9 +1305,12 @@ export function PdfEditor() {
         await replaceMaterialFile(currentMaterial, outputFile);
       }
       setSavedSnapshot(annotationsRef.current);
-      setSaveMessage(mode === "copy"
+      const successMessage = mode === "copy"
         ? `Nova cópia salva como “${outputName}”.`
-        : "O arquivo original foi substituído pela versão editada.");
+        : "O arquivo original foi substituído pela versão editada.";
+      setSaveMessage(adaptedText
+        ? `${successMessage} Símbolos não suportados pela fonte foram adaptados.`
+        : successMessage);
     } catch (error) {
       setSaveMessage(null);
       setEditorError(error instanceof Error ? error.message : "Não foi possível salvar o PDF.");

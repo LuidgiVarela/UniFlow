@@ -1,9 +1,27 @@
 "use client";
 
-import { Download, Edit, ExternalLink, FilePenLine, FileText, Folder, FolderPlus, Link as LinkIcon, Plus, TextCursorInput, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Edit,
+  Ellipsis,
+  ExternalLink,
+  FilePenLine,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Link as LinkIcon,
+  Plus,
+  TextCursorInput,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AssessmentModal } from "@/components/assessment-modal";
 import { DemandModal } from "@/components/demand-modal";
 import { DemandDescriptionPreview } from "@/components/demand-description-preview";
@@ -150,6 +168,7 @@ export default function SubjectDetailPage() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set());
   const [deletingFolderIds, setDeletingFolderIds] = useState<Set<string>>(() => new Set());
   const [deletingMaterialIds, setDeletingMaterialIds] = useState<Set<string>>(() => new Set());
   const [folderOpen, setFolderOpen] = useState(false);
@@ -161,6 +180,8 @@ export default function SubjectDetailPage() {
   const [materialName, setMaterialName] = useState("");
   const [materialNameError, setMaterialNameError] = useState<string | null>(null);
   const [savingMaterialName, setSavingMaterialName] = useState(false);
+  const breadcrumbRef = useRef<HTMLElement | null>(null);
+  const folderActionsRef = useRef<HTMLDetailsElement | null>(null);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -226,6 +247,31 @@ export default function SubjectDetailPage() {
     };
   }, [getMaterialUrl, subjectMaterials, tab]);
 
+  useEffect(() => {
+    const breadcrumb = breadcrumbRef.current;
+    if (!breadcrumb) return;
+    breadcrumb.scrollLeft = breadcrumb.scrollWidth;
+  }, [activeFolderId]);
+
+  useEffect(() => {
+    function closeActionsMenu(event: PointerEvent | KeyboardEvent) {
+      const menu = folderActionsRef.current;
+      if (!menu?.open) return;
+      if (event instanceof KeyboardEvent && event.key === "Escape") {
+        menu.removeAttribute("open");
+        return;
+      }
+      if (event instanceof PointerEvent && !menu.contains(event.target as Node)) menu.removeAttribute("open");
+    }
+
+    document.addEventListener("pointerdown", closeActionsMenu);
+    document.addEventListener("keydown", closeActionsMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeActionsMenu);
+      document.removeEventListener("keydown", closeActionsMenu);
+    };
+  }, []);
+
   if (loading) {
     return (
       <Panel className="plain-section loading-panel">
@@ -280,6 +326,7 @@ export default function SubjectDetailPage() {
     return { ...folder, name: path.join(" / ") };
   });
   const currentDropTargetId = `current-folder:${currentFolderId ?? "root"}`;
+  const currentItemCount = currentFolders.length + currentMaterials.length;
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -300,12 +347,32 @@ export default function SubjectDetailPage() {
     return false;
   }
 
+  function expandFolder(folderId: string) {
+    setExpandedFolderIds((current) => {
+      if (current.has(folderId)) return current;
+      const next = new Set(current);
+      next.add(folderId);
+      return next;
+    });
+  }
+
+  function toggleFolder(folderId: string) {
+    setExpandedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  }
+
   function openMaterialFolder(folderId: string) {
+    expandFolder(folderId);
     window.history.pushState({ uniflowMaterialFolderId: folderId }, "", window.location.href);
     setActiveFolderId(folderId);
   }
 
   function goToMaterialFolder(folderId: string | null) {
+    if (folderId) expandFolder(folderId);
     window.history.pushState({ uniflowMaterialFolderId: folderId }, "", window.location.href);
     setActiveFolderId(folderId);
   }
@@ -316,6 +383,90 @@ export default function SubjectDetailPage() {
       return;
     }
     setActiveFolderId(null);
+  }
+
+  function canDropIntoFolder(folderId: string | null) {
+    if (draggedMaterialId) return true;
+    if (!draggedFolderId || draggedFolderId === folderId) return false;
+    return !folderId || !isFolderDescendant(folderId, draggedFolderId);
+  }
+
+  function handleFolderTargetDragOver(event: React.DragEvent<HTMLElement>, folderId: string | null, targetId: string) {
+    if (!canDropIntoFolder(folderId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDropTargetId(targetId);
+  }
+
+  function handleFolderTargetDrop(event: React.DragEvent<HTMLElement>, folderId: string | null) {
+    event.preventDefault();
+    event.stopPropagation();
+    const source = event.dataTransfer.getData("text/plain");
+    if (folderId) expandFolder(folderId);
+    if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), folderId);
+    if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), folderId);
+  }
+
+  function closeFolderActions() {
+    folderActionsRef.current?.removeAttribute("open");
+  }
+
+  function renderFolderTree(parentFolderId: string | null, depth = 0): React.ReactNode {
+    return subjectFolders
+      .filter((folder) => normalizedFolderParent(folder) === parentFolderId)
+      .map((folder) => {
+        const childFolders = subjectFolders.filter((item) => normalizedFolderParent(item) === folder.id);
+        const hasChildren = childFolders.length > 0;
+        const isActive = activeFolderId === folder.id;
+        const isActiveAncestor = folderPath.slice(0, -1).some((item) => item.id === folder.id);
+        const isExpanded = hasChildren && (expandedFolderIds.has(folder.id) || isActiveAncestor);
+        const canDrop = canDropIntoFolder(folder.id);
+
+        return (
+          <div
+            aria-expanded={hasChildren ? isExpanded : undefined}
+            aria-selected={isActive}
+            className="material-tree-item"
+            key={folder.id}
+            role="treeitem"
+          >
+            <div
+              className={`material-tree-row ${isActive ? "active" : ""} ${dropTargetId === folder.id ? "drop-active" : ""}`}
+              onDragLeave={() => setDropTargetId((current) => current === folder.id ? null : current)}
+              onDragOver={(event) => {
+                if (canDrop) handleFolderTargetDragOver(event, folder.id, folder.id);
+              }}
+              onDrop={(event) => {
+                if (canDrop) handleFolderTargetDrop(event, folder.id);
+              }}
+              style={{ paddingLeft: `${8 + depth * 16}px` }}
+            >
+              {hasChildren ? (
+                <button
+                  aria-label={`${isExpanded ? "Recolher" : "Expandir"} ${folder.name}`}
+                  className="material-tree-toggle"
+                  onClick={() => toggleFolder(folder.id)}
+                  title={isExpanded ? "Recolher pasta" : "Expandir pasta"}
+                  type="button"
+                >
+                  {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                </button>
+              ) : <span aria-hidden className="material-tree-toggle-spacer" />}
+              <button
+                className="material-tree-open"
+                onClick={() => openMaterialFolder(folder.id)}
+                title={folder.name}
+                type="button"
+              >
+                {isActive || isExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+                <span>{folder.name}</span>
+              </button>
+            </div>
+            {isExpanded ? <div role="group">{renderFolderTree(folder.id, depth + 1)}</div> : null}
+          </div>
+        );
+      });
   }
 
   function renderAssessment(assessment: Assessment, result = false) {
@@ -934,108 +1085,157 @@ export default function SubjectDetailPage() {
       ) : null}
 
       {tab === "materials" ? (
-        <Panel className="plain-section">
+        <Panel className="plain-section material-manager-panel">
           <div className="material-explorer-toolbar">
-            <div>
-              <h2>Materiais</h2>
-              <div className="material-breadcrumb">
-                <button
-                  className={dropTargetId === "root" ? "drop-active" : ""}
-                  onClick={() => goToMaterialFolder(null)}
-                  onDragEnter={() => setDropTargetId("root")}
-                  onDragLeave={() => setDropTargetId(null)}
-                  onDragOver={(event) => {
-                    if (!draggedMaterialId && !draggedFolderId) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const source = event.dataTransfer.getData("text/plain");
-                    if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), null);
-                    if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), null);
-                  }}
-                  type="button"
-                >
-                  Materiais
-                </button>
-                {folderPath.map((folder) => (
-                  <span className="material-breadcrumb-segment" key={folder.id}>
-                    <span>/</span>
-                    <button
-                      className={dropTargetId === folder.id ? "drop-active" : ""}
-                      onClick={() => goToMaterialFolder(folder.id)}
-                      onDragEnter={() => setDropTargetId(folder.id)}
-                      onDragLeave={() => setDropTargetId(null)}
-                      onDragOver={(event) => {
-                        if (!draggedMaterialId && !draggedFolderId) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        const source = event.dataTransfer.getData("text/plain");
-                        if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), folder.id);
-                        if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), folder.id);
-                      }}
-                      type="button"
-                    >
-                      {folder.name}
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
+            <h2 className="visually-hidden">Materiais</h2>
             <div className="section-actions">
               <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
               <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
               <button
-                className={`ghost-action ${zipStatus ? "is-loading" : ""}`}
+                aria-label={activeFolder ? "Baixar conteúdo desta pasta" : "Baixar todos os materiais"}
+                className={`icon-button material-command-button ${zipStatus ? "is-loading" : ""}`}
                 disabled={Boolean(zipStatus)}
                 onClick={() => void downloadCurrentFolderZip()}
+                title={activeFolder ? "Baixar conteúdo desta pasta" : "Baixar todos os materiais"}
                 type="button"
               >
-                <Download size={16} />{activeFolder ? "Baixar pasta" : "Baixar materiais"}
+                {zipStatus ? null : <Download size={17} />}
               </button>
               {activeFolder ? (
-                <>
-                  <button className="ghost-action" onClick={() => openFolderModal(activeFolder)} type="button">
-                    <Edit size={15} />Renomear
-                  </button>
+                <details className="material-actions-menu" key={activeFolder.id} ref={folderActionsRef}>
+                  <summary aria-label="Mais ações da pasta" className="icon-button material-command-button" title="Mais ações">
+                    <Ellipsis size={18} />
+                  </summary>
+                  <div className="material-actions-popover" role="menu">
+                    <button onClick={() => {
+                      closeFolderActions();
+                      openFolderModal(activeFolder);
+                    }} role="menuitem" type="button">
+                      <Edit size={15} /><span>Renomear pasta</span>
+                    </button>
                   <button
-                    className={`ghost-action danger ${deletingFolderIds.has(activeFolder.id) ? "is-loading" : ""}`}
+                    className={`danger ${deletingFolderIds.has(activeFolder.id) ? "is-loading" : ""}`}
                     disabled={deletingFolderIds.has(activeFolder.id)}
-                    onClick={() => deleteFolder(activeFolder.id, activeFolder.name)}
+                    onClick={() => {
+                      closeFolderActions();
+                      void deleteFolder(activeFolder.id, activeFolder.name);
+                    }}
+                    role="menuitem"
                     type="button"
                   >
-                    {deletingFolderIds.has(activeFolder.id) ? null : <Trash2 size={15} />}Excluir pasta
+                    {deletingFolderIds.has(activeFolder.id) ? null : <Trash2 size={15} />}<span>Excluir pasta</span>
                   </button>
-                </>
+                  </div>
+                </details>
               ) : null}
             </div>
           </div>
+
+          <div className="material-location-row">
+            <div className="material-navigation-buttons">
+              <button
+                aria-label="Voltar para a pasta anterior"
+                className="icon-button"
+                disabled={!activeFolder}
+                onClick={closeMaterialFolder}
+                title="Voltar"
+                type="button"
+              >
+                <ArrowLeft size={17} />
+              </button>
+              <button
+                aria-label="Subir um nível"
+                className="icon-button"
+                disabled={!activeFolder}
+                onClick={() => goToMaterialFolder(activeFolder?.parent_folder_id ?? null)}
+                title="Subir um nível"
+                type="button"
+              >
+                <ArrowUp size={17} />
+              </button>
+            </div>
+            <nav aria-label="Caminho da pasta" className="material-breadcrumb" ref={breadcrumbRef}>
+              {activeFolder ? (
+                <button
+                  className={dropTargetId === "root" ? "drop-active" : ""}
+                  onClick={() => goToMaterialFolder(null)}
+                  onDragLeave={() => setDropTargetId(null)}
+                  onDragOver={(event) => handleFolderTargetDragOver(event, null, "root")}
+                  onDrop={(event) => handleFolderTargetDrop(event, null)}
+                  title="Materiais"
+                  type="button"
+                >
+                  Materiais
+                </button>
+              ) : <span aria-current="page" className="current">Materiais</span>}
+              {folderPath.map((folder, index) => {
+                const isCurrent = index === folderPath.length - 1;
+                return (
+                  <span className="material-breadcrumb-segment" key={folder.id}>
+                    <ChevronRight aria-hidden size={14} />
+                    {isCurrent ? (
+                      <span aria-current="page" className="current" title={folder.name}>{folder.name}</span>
+                    ) : (
+                      <button
+                        className={dropTargetId === folder.id ? "drop-active" : ""}
+                        onClick={() => goToMaterialFolder(folder.id)}
+                        onDragLeave={() => setDropTargetId(null)}
+                        onDragOver={(event) => handleFolderTargetDragOver(event, folder.id, folder.id)}
+                        onDrop={(event) => handleFolderTargetDrop(event, folder.id)}
+                        title={folder.name}
+                        type="button"
+                      >
+                        {folder.name}
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+            </nav>
+          </div>
+
           {zipStatus ? <p className="form-message material-zip-status">{zipStatus}</p> : null}
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
-          <div
-            className={`material-explorer-list ${dropTargetId === currentDropTargetId ? "drop-active" : ""}`}
-            onDragOver={(event) => {
-              if (!draggedMaterialId && !draggedFolderId) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              setDropTargetId(currentDropTargetId);
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const source = event.dataTransfer.getData("text/plain");
-              if (source.startsWith("material:")) void moveMaterialToFolder(source.replace(/^material:/, ""), currentFolderId);
-              if (source.startsWith("folder:")) void moveFolderToParent(source.replace(/^folder:/, ""), currentFolderId);
-            }}
-          >
-            {currentFolders.map((folder) => renderFolder(folder))}
-            {currentMaterials.map((material) => renderMaterial(material))}
-            {!currentFolders.length && !currentMaterials.length ? (
-              <p className="muted compact-note">{activeFolder ? "Pasta vazia." : "Nenhum material ainda."}</p>
-            ) : null}
+
+          <div className="material-browser">
+            <aside aria-label="Árvore de pastas" className="material-tree-panel">
+              <div className="material-tree-heading">Pastas</div>
+              <div className="material-tree" role="tree">
+                <div aria-expanded aria-selected={!activeFolder} role="treeitem">
+                  <div
+                    className={`material-tree-row material-tree-root ${activeFolder ? "" : "active"} ${dropTargetId === "root" ? "drop-active" : ""}`}
+                    onDragLeave={() => setDropTargetId((current) => current === "root" ? null : current)}
+                    onDragOver={(event) => handleFolderTargetDragOver(event, null, "root")}
+                    onDrop={(event) => handleFolderTargetDrop(event, null)}
+                  >
+                    <span aria-hidden className="material-tree-toggle-spacer" />
+                    <button className="material-tree-open" onClick={() => goToMaterialFolder(null)} title="Materiais" type="button">
+                      <FolderOpen size={16} /><span>Materiais</span>
+                    </button>
+                  </div>
+                  <div role="group">{renderFolderTree(null, 1)}</div>
+                </div>
+              </div>
+            </aside>
+
+            <section aria-label={activeFolder?.name ?? "Materiais"} className="material-file-pane">
+              <header className="material-file-pane-header">
+                <strong>Nome</strong>
+                <span>{currentItemCount} {currentItemCount === 1 ? "item" : "itens"}</span>
+              </header>
+              <div
+                className={`material-explorer-list ${dropTargetId === currentDropTargetId ? "drop-active" : ""}`}
+                onDragLeave={() => setDropTargetId((current) => current === currentDropTargetId ? null : current)}
+                onDragOver={(event) => handleFolderTargetDragOver(event, currentFolderId, currentDropTargetId)}
+                onDrop={(event) => handleFolderTargetDrop(event, currentFolderId)}
+              >
+                {currentFolders.map((folder) => renderFolder(folder))}
+                {currentMaterials.map((material) => renderMaterial(material))}
+                {!currentFolders.length && !currentMaterials.length ? (
+                  <p className="muted compact-note">{activeFolder ? "Pasta vazia." : "Nenhum material ainda."}</p>
+                ) : null}
+              </div>
+            </section>
           </div>
         </Panel>
       ) : null}

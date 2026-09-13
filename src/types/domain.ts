@@ -123,6 +123,16 @@ export type AssessmentTopic = {
   created_at?: string;
 };
 
+export type AssessmentMaterial = {
+  assessment_id: string;
+  material_id: string;
+  user_id?: string;
+  mastery_level?: TopicMasteryLevel | null;
+  last_reviewed_at?: string | null;
+  next_review_date?: string | null;
+  created_at?: string;
+};
+
 export type MaterialType = "file" | "link";
 
 export type MaterialFolder = {
@@ -157,6 +167,7 @@ export type AppData = {
   gradeComponents: GradeComponent[];
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];
+  assessmentMaterials: AssessmentMaterial[];
   materials: Material[];
   materialFolders: MaterialFolder[];
 };

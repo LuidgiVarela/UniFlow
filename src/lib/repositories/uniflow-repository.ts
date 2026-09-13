@@ -3,6 +3,7 @@ import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
 import type {
   AppData,
   Assessment,
+  AssessmentMaterial,
   AssessmentTopic,
   Demand,
   DemandQuestion,
@@ -43,6 +44,7 @@ function readDemoData(): AppData {
     gradeComponents: parsed.gradeComponents ?? [],
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
+    assessmentMaterials: parsed.assessmentMaterials ?? [],
     materials: parsed.materials ?? [],
     materialFolders: parsed.materialFolders ?? [],
   };
@@ -73,6 +75,7 @@ export async function loadAppData(): Promise<AppData> {
     gradeComponents,
     assessments,
     assessmentTopics,
+    assessmentMaterials,
     materials,
     materialFolders,
   ] = await Promise.all([
@@ -84,6 +87,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("grade_components").select("*").order("created_at"),
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
+    supabase.from("assessment_materials").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
     supabase.from("material_folders").select("*").order("parent_folder_id", { nullsFirst: true }).order("sort_order", { nullsFirst: true }).order("name"),
   ]);
@@ -101,6 +105,7 @@ export async function loadAppData(): Promise<AppData> {
     gradeComponents: gradeComponents.error ? [] : gradeComponents.data ?? [],
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
+    assessmentMaterials: assessmentMaterials.error ? [] : assessmentMaterials.data ?? [],
     materials: materials.data ?? [],
     materialFolders: materialFolders.error ? [] : materialFolders.data ?? [],
   } as AppData;
@@ -165,6 +170,10 @@ export async function deleteSubject(id: string) {
       data.assessments.some((assessment) => assessment.id === item.assessment_id),
     );
     data.materials = data.materials.filter((item) => item.subject_id !== id);
+    data.assessmentMaterials = data.assessmentMaterials.filter((item) =>
+      data.assessments.some((assessment) => assessment.id === item.assessment_id)
+      && data.materials.some((material) => material.id === item.material_id),
+    );
     data.materialFolders = data.materialFolders.filter((item) => item.subject_id !== id);
     writeDemoData(data);
     return;
@@ -262,22 +271,46 @@ export async function deleteDemandQuestionItem(id: string) {
   if (error) throw error;
 }
 
-export async function generateDemandQuestionSet(demandId: string, questionCount: number, itemLabels: string[]) {
+function demandQuestionNumber(question: Pick<DemandQuestion, "label" | "order_index">) {
+  const match = question.label.match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : question.order_index;
+}
+
+function demandQuestionStart(
+  existingQuestions: Array<Pick<DemandQuestion, "label" | "order_index">>,
+  requestedStart: 0 | 1 | undefined,
+  questionCount: number,
+) {
+  if (!existingQuestions.length) return requestedStart ?? 1;
+  const numbers = existingQuestions.map(demandQuestionNumber).filter(Number.isFinite);
+  if (requestedStart === 0 && numbers.includes(0)) return null;
+  if (requestedStart === 0 && questionCount === 1) return 0;
+  return Math.max(0, ...numbers) + 1;
+}
+
+export async function generateDemandQuestionSet(
+  demandId: string,
+  questionCount: number,
+  itemLabels: string[],
+  requestedStart?: 0 | 1,
+) {
   const cleanCount = Math.max(0, Math.floor(questionCount));
   const cleanLabels = itemLabels.map((label) => label.trim()).filter(Boolean);
   if (!cleanCount || !cleanLabels.length) return;
 
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
-    const existingCount = data.demandQuestions.filter((question) => question.demand_id === demandId).length;
+    const existingQuestions = data.demandQuestions.filter((question) => question.demand_id === demandId);
+    const startNumber = demandQuestionStart(existingQuestions, requestedStart, cleanCount);
+    if (startNumber === null) return;
     const questions: DemandQuestion[] = Array.from({ length: cleanCount }, (_, index) => ({
       id: crypto.randomUUID(),
       demand_id: demandId,
-      label: `Questão ${existingCount + index + 1}`,
+      label: `Questão ${startNumber + index}`,
       difficulty: "media",
       important: false,
       notes: "",
-      order_index: existingCount + index + 1,
+      order_index: startNumber + index,
       created_at: new Date().toISOString(),
     }));
     const items: DemandQuestionItem[] = questions.flatMap((question) =>
@@ -298,23 +331,24 @@ export async function generateDemandQuestionSet(demandId: string, questionCount:
   }
 
   const user_id = await requireUserId();
-  const { count, error: countError } = await supabase
+  const { data: existingQuestions, error: questionsError } = await supabase
     .from("demand_questions")
-    .select("id", { count: "exact", head: true })
+    .select("label, order_index")
     .eq("demand_id", demandId)
     .eq("user_id", user_id);
-  if (countError) throw countError;
+  if (questionsError) throw questionsError;
 
-  const existingCount = count ?? 0;
+  const startNumber = demandQuestionStart(existingQuestions ?? [], requestedStart, cleanCount);
+  if (startNumber === null) return;
   const questions = Array.from({ length: cleanCount }, (_, index) => ({
     id: crypto.randomUUID(),
     user_id,
     demand_id: demandId,
-    label: `Questão ${existingCount + index + 1}`,
+    label: `Questão ${startNumber + index}`,
     difficulty: "media",
     important: false,
     notes: "",
-    order_index: existingCount + index + 1,
+    order_index: startNumber + index,
     created_at: new Date().toISOString(),
   }));
   const insertedQuestions = await supabase.from("demand_questions").insert(questions).select();
@@ -372,7 +406,7 @@ export async function deleteTopic(id: string) {
   if (error) throw error;
 }
 
-export async function saveAssessment(assessment: Assessment, topicIds?: string[]) {
+export async function saveAssessment(assessment: Assessment, topicIds?: string[], materialIds?: string[]) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     const exists = data.assessments.some((item) => item.id === assessment.id);
@@ -383,6 +417,20 @@ export async function saveAssessment(assessment: Assessment, topicIds?: string[]
       data.assessmentTopics = [
         ...data.assessmentTopics.filter((item) => item.assessment_id !== assessment.id),
         ...topicIds.map((topic_id) => ({ assessment_id: assessment.id, topic_id })),
+      ];
+    }
+    if (materialIds) {
+      const existingLinks = new Map(
+        data.assessmentMaterials
+          .filter((item) => item.assessment_id === assessment.id)
+          .map((item) => [item.material_id, item]),
+      );
+      data.assessmentMaterials = [
+        ...data.assessmentMaterials.filter((item) => item.assessment_id !== assessment.id),
+        ...materialIds.map((material_id) => existingLinks.get(material_id) ?? {
+          assessment_id: assessment.id,
+          material_id,
+        }),
       ];
     }
     writeDemoData(data);
@@ -410,7 +458,62 @@ export async function saveAssessment(assessment: Assessment, topicIds?: string[]
       if (insertResult.error) throw insertResult.error;
     }
   }
+  if (materialIds) {
+    const existingResult = await supabase
+      .from("assessment_materials")
+      .select("material_id")
+      .eq("assessment_id", assessment.id);
+    if (existingResult.error) throw existingResult.error;
+
+    const selectedIds = new Set(materialIds);
+    const existingIds = new Set((existingResult.data ?? []).map((item) => item.material_id));
+    const addedIds = materialIds.filter((materialId) => !existingIds.has(materialId));
+    const removedIds = [...existingIds].filter((materialId) => !selectedIds.has(materialId));
+
+    if (addedIds.length) {
+      const rows: AssessmentMaterial[] = addedIds.map((material_id) => ({
+        assessment_id: assessment.id,
+        material_id,
+        user_id: user_id ?? undefined,
+      }));
+      const insertResult = await supabase.from("assessment_materials").insert(rows);
+      if (insertResult.error) throw insertResult.error;
+    }
+    if (removedIds.length) {
+      const deleteResult = await supabase
+        .from("assessment_materials")
+        .delete()
+        .eq("assessment_id", assessment.id)
+        .in("material_id", removedIds);
+      if (deleteResult.error) throw deleteResult.error;
+    }
+  }
   return data as Assessment;
+}
+
+export async function saveAssessmentMaterialProgress(item: AssessmentMaterial) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.assessmentMaterials.some(
+      (current) => current.assessment_id === item.assessment_id && current.material_id === item.material_id,
+    );
+    data.assessmentMaterials = exists
+      ? data.assessmentMaterials.map((current) => (
+        current.assessment_id === item.assessment_id && current.material_id === item.material_id ? item : current
+      ))
+      : [...data.assessmentMaterials, item];
+    writeDemoData(data);
+    return item;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("assessment_materials")
+    .upsert({ ...item, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AssessmentMaterial;
 }
 
 export async function saveGradeComponent(component: GradeComponent) {
@@ -454,6 +557,7 @@ export async function deleteAssessment(id: string) {
     const data = readDemoData();
     data.assessments = data.assessments.filter((item) => item.id !== id);
     data.assessmentTopics = data.assessmentTopics.filter((item) => item.assessment_id !== id);
+    data.assessmentMaterials = data.assessmentMaterials.filter((item) => item.assessment_id !== id);
     writeDemoData(data);
     return;
   }
@@ -612,6 +716,7 @@ export async function deleteMaterial(material: Material) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     data.materials = data.materials.filter((item) => item.id !== material.id);
+    data.assessmentMaterials = data.assessmentMaterials.filter((item) => item.material_id !== material.id);
     writeDemoData(data);
     return;
   }

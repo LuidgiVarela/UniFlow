@@ -150,6 +150,7 @@ export default function SubjectDetailPage() {
     demandQuestionItems,
     demandQuestions,
     assessments,
+    assessmentMaterials,
     assessmentTopics,
     gradeComponents,
     materialFolders,
@@ -1181,6 +1182,7 @@ export default function SubjectDetailPage() {
         <Panel className="plain-section preparation-panel">
           <StudyPreparation
             assessments={subjectAssessments}
+            assessmentMaterials={assessmentMaterials}
             assessmentTopics={assessmentTopics}
             demands={subjectDemands}
             materials={subjectMaterials}

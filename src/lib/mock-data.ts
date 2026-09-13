@@ -118,6 +118,7 @@ export const mockData: AppData = {
     { assessment_id: "ass-1", topic_id: "top-lp-4" },
     { assessment_id: "ass-1", topic_id: "top-lp-5" },
   ],
+  assessmentMaterials: [],
   materials: [
     {
       id: "mat-1",

@@ -19,6 +19,7 @@ import {
   reorderMaterialFolders as persistMaterialFolderOrder,
   reorderSubjects as persistSubjectOrder,
   saveAssessment,
+  saveAssessmentMaterialProgress,
   saveDemand,
   saveDemandQuestion,
   saveDemandQuestionItem,
@@ -32,6 +33,7 @@ import {
 import type {
   AppData,
   Assessment,
+  AssessmentMaterial,
   Demand,
   DemandQuestion,
   DemandQuestionItem,
@@ -56,10 +58,16 @@ type DataContextValue = AppData & {
   upsertDemandQuestion: (question: DemandQuestion) => Promise<void>;
   upsertDemandQuestionItem: (item: DemandQuestionItem) => Promise<void>;
   removeDemandQuestionItem: (id: string) => Promise<void>;
-  generateDemandQuestions: (demandId: string, questionCount: number, itemLabels: string[]) => Promise<void>;
+  generateDemandQuestions: (
+    demandId: string,
+    questionCount: number,
+    itemLabels: string[],
+    requestedStart?: 0 | 1,
+  ) => Promise<void>;
   upsertTopic: (topic: Topic) => Promise<void>;
   removeTopic: (id: string) => Promise<void>;
-  upsertAssessment: (assessment: Assessment, topicIds?: string[]) => Promise<void>;
+  upsertAssessment: (assessment: Assessment, topicIds?: string[], materialIds?: string[]) => Promise<void>;
+  upsertAssessmentMaterialProgress: (item: AssessmentMaterial) => Promise<void>;
   removeAssessment: (id: string) => Promise<void>;
   upsertGradeComponent: (component: GradeComponent) => Promise<void>;
   removeGradeComponent: (id: string) => Promise<void>;
@@ -86,6 +94,7 @@ const emptyData: AppData = {
   gradeComponents: [],
   assessments: [],
   assessmentTopics: [],
+  assessmentMaterials: [],
   materials: [],
   materialFolders: [],
 };
@@ -273,8 +282,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           throw error;
         }
       },
-      async generateDemandQuestions(demandId, questionCount, itemLabels) {
-        await generateDemandQuestionSet(demandId, questionCount, itemLabels);
+      async generateDemandQuestions(demandId, questionCount, itemLabels, requestedStart) {
+        await generateDemandQuestionSet(demandId, questionCount, itemLabels, requestedStart);
         await refresh(false);
       },
       async upsertTopic(topic) {
@@ -299,9 +308,38 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await deleteTopic(id);
         await refresh(false);
       },
-      async upsertAssessment(assessment, topicIds) {
-        await saveAssessment(assessment, topicIds);
+      async upsertAssessment(assessment, topicIds, materialIds) {
+        await saveAssessment(assessment, topicIds, materialIds);
         await refresh(false);
+      },
+      async upsertAssessmentMaterialProgress(item) {
+        const previousItems = dataRef.current.assessmentMaterials;
+        updateData((current) => {
+          const exists = current.assessmentMaterials.some(
+            (currentItem) => currentItem.assessment_id === item.assessment_id
+              && currentItem.material_id === item.material_id,
+          );
+          return {
+            ...current,
+            assessmentMaterials: exists
+              ? current.assessmentMaterials.map((currentItem) => (
+                currentItem.assessment_id === item.assessment_id
+                  && currentItem.material_id === item.material_id
+                  ? item
+                  : currentItem
+              ))
+              : [...current.assessmentMaterials, item],
+          };
+        });
+        try {
+          await enqueueMutation(
+            `assessment-material:${item.assessment_id}:${item.material_id}`,
+            () => saveAssessmentMaterialProgress(item).then(() => undefined),
+          );
+        } catch (error) {
+          updateData((current) => ({ ...current, assessmentMaterials: previousItems }));
+          throw error;
+        }
       },
       async removeAssessment(id) {
         await deleteAssessment(id);

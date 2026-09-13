@@ -37,6 +37,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     upsertDemandQuestionItem,
   } = useAppData();
   const [questionCount, setQuestionCount] = useState(demand.total_items ?? 21);
+  const [questionStart, setQuestionStart] = useState<0 | 1>(1);
   const [itemPattern, setItemPattern] = useState("a,b,c,d");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +86,10 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
       percent: difficultyItems.length ? Math.round((difficultyDone / difficultyItems.length) * 100) : 0,
     };
   });
+  const hasQuestionZero = questions.some((question) => {
+    const numberMatch = question.label.match(/(\d+)\s*$/);
+    return question.order_index === 0 || Number(numberMatch?.[1]) === 0;
+  });
 
   async function submitGenerator(event: React.FormEvent) {
     event.preventDefault();
@@ -92,9 +97,22 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     setGenerating(true);
     setError(null);
     try {
-      await generateDemandQuestions(demand.id, questionCount, labels);
+      await generateDemandQuestions(demand.id, questionCount, labels, questions.length ? undefined : questionStart);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Não foi possível gerar as questões.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function addQuestionZero() {
+    const labels = itemPattern.split(",");
+    setGenerating(true);
+    setError(null);
+    try {
+      await generateDemandQuestions(demand.id, 1, labels, 0);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível adicionar a Questão 0.");
     } finally {
       setGenerating(false);
     }
@@ -164,12 +182,35 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         </div>
       </section>
 
-      <form className="task-generator" onSubmit={submitGenerator}>
+      <form className={`task-generator ${questions.length ? "" : "with-question-start"}`} onSubmit={submitGenerator}>
         <label>Questões<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
         <label>Itens iniciais<input value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
+        {!questions.length ? (
+          <div className="question-start-field">
+            <span>Primeira questão</span>
+            <div aria-label="Número da primeira questão" className="question-start-control" role="group">
+              {([0, 1] as const).map((number) => (
+                <button
+                  aria-pressed={questionStart === number}
+                  className={questionStart === number ? "active" : ""}
+                  key={number}
+                  onClick={() => setQuestionStart(number)}
+                  type="button"
+                >
+                  {number}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <button className={`primary-button ${generating ? "is-loading" : ""}`} disabled={generating} type="submit">
           {questions.length ? "Adicionar questões" : "Configurar lista"}
         </button>
+        {questions.length && !hasQuestionZero ? (
+          <button className="ghost-action question-zero-action" disabled={generating} onClick={() => void addQuestionZero()} type="button">
+            <Plus size={15} />Adicionar Questão 0
+          </button>
+        ) : null}
       </form>
       {error ? <p className="form-message error-message">{error}</p> : null}
 

@@ -100,7 +100,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
 
       {editing ? (
         <div className="modal-backdrop">
-          <form className="modal form-stack compact-modal" onSubmit={submit}>
+          <form className="modal form-stack topic-modal" onSubmit={submit}>
             <div className="modal-header">
               <h2>{subjectTopics.some((topic) => topic.id === editing.id) ? "Editar tópico" : "Novo tópico"}</h2>
               <button className="icon-button" onClick={() => setEditing(null)} type="button">x</button>
@@ -110,7 +110,7 @@ export function TopicManager({ subject }: { subject: Subject }) {
               <label>Ordem<input type="number" value={editing.order_index} onChange={(e) => setEditing({ ...editing, order_index: Number(e.target.value) })} /></label>
               <label>Status<select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value as TopicStatus })}>{statuses.map((status) => <option key={status} value={status}>{topicStatusLabels[status]}</option>)}</select></label>
             </div>
-            <label>Observação<textarea value={editing.notes ?? ""} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></label>
+            <label>Observação<textarea rows={10} value={editing.notes ?? ""} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></label>
             <button className={`primary-button full ${savingForm ? "is-loading" : ""}`} disabled={savingForm} type="submit">
               {savingForm ? "Salvando..." : "Salvar tópico"}
             </button>

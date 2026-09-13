@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { DemandDescriptionPreview } from "@/components/demand-description-preview";
+import { ReviewQueue } from "@/components/review-queue";
 import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
 import { PageHeader, Panel } from "@/components/ui";
 import { useAppData } from "@/components/data-provider";
@@ -29,6 +30,8 @@ export default function Home() {
   return (
     <div className="overview-page">
       <PageHeader title="Visão geral" />
+
+      <ReviewQueue />
 
       {todayItems.length ? (
         <Panel className="plain-section overview-today-panel">

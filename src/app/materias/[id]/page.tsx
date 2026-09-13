@@ -28,6 +28,7 @@ import { DemandDescriptionPreview } from "@/components/demand-description-previe
 import { useAppData } from "@/components/data-provider";
 import { GradeCriteriaManager } from "@/components/grade-criteria-manager";
 import { MaterialModal } from "@/components/material-modal";
+import { StudyPreparation } from "@/components/study-preparation";
 import { SubjectModal } from "@/components/subject-modal";
 import { getDetailedTaskProgress, TaskProgress } from "@/components/task-progress";
 import { TopicManager } from "@/components/topic-manager";
@@ -46,7 +47,7 @@ import {
 import { sortDemandsByPriorityAndDate } from "@/lib/priority";
 import type { Assessment, Demand, Material, MaterialFolder } from "@/types/domain";
 
-type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "grades" | "materials";
+type SubjectTab = "overview" | "tasks" | "content" | "assessments" | "preparation" | "grades" | "materials";
 
 const MATERIAL_TREE_DEFAULT_WIDTH = 242;
 const MATERIAL_TREE_MIN_WIDTH = 190;
@@ -59,6 +60,7 @@ const tabs: Array<{ id: SubjectTab; label: string; query: string }> = [
   { id: "tasks", label: "Tarefas", query: "tarefas" },
   { id: "content", label: "Conteúdo", query: "conteudo" },
   { id: "assessments", label: "Avaliações", query: "avaliacoes" },
+  { id: "preparation", label: "Preparação", query: "preparacao" },
   { id: "grades", label: "Notas", query: "notas" },
   { id: "materials", label: "Materiais", query: "materiais" },
 ];
@@ -1172,6 +1174,20 @@ export default function SubjectDetailPage() {
           <div className="quiet-list">
             {completedAssessments.length ? completedAssessments.map((assessment) => renderAssessment(assessment, true)) : <p className="muted compact-note">Nenhuma avaliação realizada.</p>}
           </div>
+        </Panel>
+      ) : null}
+
+      {tab === "preparation" ? (
+        <Panel className="plain-section preparation-panel">
+          <StudyPreparation
+            assessments={subjectAssessments}
+            assessmentTopics={assessmentTopics}
+            demands={subjectDemands}
+            materials={subjectMaterials}
+            onEditAssessment={setEditingAssessment}
+            subject={subject}
+            topics={subjectTopics}
+          />
         </Panel>
       ) : null}
 

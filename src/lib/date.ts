@@ -11,9 +11,9 @@ export function formatDate(date: string | null | undefined) {
 
 export function daysUntil(date: string) {
   const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12).getTime();
   const target = new Date(`${date}T12:00:00`).getTime();
-  return Math.ceil((target - start) / 86_400_000);
+  return Math.round((target - start) / 86_400_000);
 }
 
 export function weekDays(reference = new Date()) {

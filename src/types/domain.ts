@@ -11,6 +11,7 @@ export type DemandPriority = "baixa" | "media" | "alta" | "urgente";
 export type DemandStatus = "pendente" | "em_andamento" | "concluido";
 export type DemandQuestionDifficulty = "facil" | "media" | "dificil";
 export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
+export type TopicMasteryLevel = 0 | 1 | 2 | 3;
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
 export type GradeComponentCalculation = "average" | "weighted";
@@ -82,6 +83,9 @@ export type Topic = {
   status: TopicStatus;
   order_index: number;
   notes?: string | null;
+  mastery_level?: TopicMasteryLevel | null;
+  last_reviewed_at?: string | null;
+  next_review_date?: string | null;
   created_at?: string;
 };
 

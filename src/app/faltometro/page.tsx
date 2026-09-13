@@ -72,7 +72,7 @@ export default function FaltometroPage() {
   }
 
   return (
-    <>
+    <div className="attendance-page">
       <PageHeader title="Faltômetro" />
       <Panel className="plain-section attendance-panel">
         <section className="semester-countdown-card">
@@ -169,6 +169,6 @@ export default function FaltometroPage() {
           {!sortedSubjects.length ? <p className="muted compact-note">Nenhuma matéria cadastrada ainda.</p> : null}
         </div>
       </Panel>
-    </>
+    </div>
   );
 }

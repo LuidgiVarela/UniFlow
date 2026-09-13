@@ -27,11 +27,11 @@ export default function Home() {
   }
 
   return (
-    <>
+    <div className="overview-page">
       <PageHeader title="Visão geral" />
 
       {todayItems.length ? (
-        <Panel className="plain-section">
+        <Panel className="plain-section overview-today-panel">
           <h2>Hoje</h2>
           <div className="quiet-list">
             {todayItems.map((item) => {
@@ -52,37 +52,16 @@ export default function Home() {
         </Panel>
       ) : null}
 
-      <Panel className="plain-section">
-        <h2>Próximos prazos</h2>
-        <div className="timeline-list">
-          {datedDemands.map((demand) => {
-            const subject = subjectFor(demand.subject_id);
-            const days = daysUntil(demand.due_date as string);
-            return (
-              <Link className="timeline-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
-                <time>{formatDate(demand.due_date)}</time>
-                <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
-                <div>
-                  <strong>{demand.title}</strong>
-                  <small>{demandTypeLabels[demand.type]}</small>
-                  <DemandDescriptionPreview description={demand.description} />
-                  <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
-                </div>
-                <small>{days === 0 ? "hoje" : days < 0 ? `${Math.abs(days)}d atrasado` : `${days}d`}</small>
-              </Link>
-            );
-          })}
-        </div>
-      </Panel>
-
-      {undatedDemands.length ? (
-        <Panel className="plain-section">
-          <h2>Pendências sem prazo</h2>
-          <div className="quiet-list">
-            {undatedDemands.map((demand) => {
+      <div className={`overview-dashboard-grid${undatedDemands.length ? "" : " without-pending"}`}>
+        <Panel className="plain-section overview-deadlines-panel">
+          <h2>Próximos prazos</h2>
+          <div className="timeline-list">
+            {datedDemands.map((demand) => {
               const subject = subjectFor(demand.subject_id);
+              const days = daysUntil(demand.due_date as string);
               return (
-                <Link className="quiet-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
+                <Link className="timeline-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
+                  <time>{formatDate(demand.due_date)}</time>
                   <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
                   <div>
                     <strong>{demand.title}</strong>
@@ -90,30 +69,53 @@ export default function Home() {
                     <DemandDescriptionPreview description={demand.description} />
                     <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
                   </div>
+                  <small>{days === 0 ? "hoje" : days < 0 ? `${Math.abs(days)}d atrasado` : `${days}d`}</small>
                 </Link>
               );
             })}
           </div>
         </Panel>
-      ) : null}
 
-      <Panel className="plain-section">
-        <h2>Próximas avaliações</h2>
-        <div className="quiet-list">
-          {upcomingAssessments.map((assessment) => {
-            const subject = subjectFor(assessment.subject_id);
-            return (
-              <Link className="quiet-row" href={`/materias/${assessment.subject_id}`} key={assessment.id}>
-                <span className="subject-code" style={{ color: subject?.color }}>{subject?.code}</span>
-                <strong>{assessment.name}</strong>
-                <small>{formatDate(assessment.date)}</small>
-                <small>{assessmentDaysText(assessment)}</small>
-              </Link>
-            );
-          })}
-          {!upcomingAssessments.length ? <p className="muted compact-note">Nenhuma avaliação futura.</p> : null}
-        </div>
-      </Panel>
-    </>
+        {undatedDemands.length ? (
+          <Panel className="plain-section overview-pending-panel">
+            <h2>Pendências sem prazo</h2>
+            <div className="quiet-list">
+              {undatedDemands.map((demand) => {
+                const subject = subjectFor(demand.subject_id);
+                return (
+                  <Link className="quiet-row task-summary-row" href={`/materias/${demand.subject_id}`} key={demand.id}>
+                    <span className="subject-code" style={{ color: subject?.color }}>{subject?.code ?? "SEM"}</span>
+                    <div>
+                      <strong>{demand.title}</strong>
+                      <small>{demandTypeLabels[demand.type]}</small>
+                      <DemandDescriptionPreview description={demand.description} />
+                      <TaskProgress demand={demand} progress={getDetailedTaskProgress(demand, demandQuestions, demandQuestionItems)} />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </Panel>
+        ) : null}
+
+        <Panel className="plain-section overview-assessments-panel">
+          <h2>Próximas avaliações</h2>
+          <div className="quiet-list">
+            {upcomingAssessments.map((assessment) => {
+              const subject = subjectFor(assessment.subject_id);
+              return (
+                <Link className="quiet-row" href={`/materias/${assessment.subject_id}`} key={assessment.id}>
+                  <span className="subject-code" style={{ color: subject?.color }}>{subject?.code}</span>
+                  <strong>{assessment.name}</strong>
+                  <small>{formatDate(assessment.date)}</small>
+                  <small>{assessmentDaysText(assessment)}</small>
+                </Link>
+              );
+            })}
+            {!upcomingAssessments.length ? <p className="muted compact-note">Nenhuma avaliação futura.</p> : null}
+          </div>
+        </Panel>
+      </div>
+    </div>
   );
 }

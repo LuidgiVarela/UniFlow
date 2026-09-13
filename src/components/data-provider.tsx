@@ -26,6 +26,8 @@ import {
   saveGradeComponent,
   saveMaterial,
   saveMaterialFolder,
+  saveReviewDayPlan,
+  saveReviewEvent,
   saveSubject,
   saveTopic,
   uploadMaterialFile,
@@ -40,6 +42,8 @@ import type {
   GradeComponent,
   Material,
   MaterialFolder,
+  ReviewDayPlan,
+  ReviewEvent,
   Subject,
   Topic,
 } from "@/types/domain";
@@ -68,6 +72,8 @@ type DataContextValue = AppData & {
   removeTopic: (id: string) => Promise<void>;
   upsertAssessment: (assessment: Assessment, topicIds?: string[], materialIds?: string[]) => Promise<void>;
   upsertAssessmentMaterialProgress: (item: AssessmentMaterial) => Promise<void>;
+  addReviewEvent: (event: ReviewEvent) => Promise<void>;
+  upsertReviewDayPlan: (plan: ReviewDayPlan) => Promise<void>;
   removeAssessment: (id: string) => Promise<void>;
   upsertGradeComponent: (component: GradeComponent) => Promise<void>;
   removeGradeComponent: (id: string) => Promise<void>;
@@ -95,6 +101,8 @@ const emptyData: AppData = {
   assessments: [],
   assessmentTopics: [],
   assessmentMaterials: [],
+  reviewEvents: [],
+  reviewDayPlans: [],
   materials: [],
   materialFolders: [],
 };
@@ -338,6 +346,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           );
         } catch (error) {
           updateData((current) => ({ ...current, assessmentMaterials: previousItems }));
+          throw error;
+        }
+      },
+      async addReviewEvent(event) {
+        const previousEvents = dataRef.current.reviewEvents;
+        updateData((current) => ({
+          ...current,
+          reviewEvents: [event, ...current.reviewEvents.filter((item) => item.id !== event.id)],
+        }));
+        try {
+          await enqueueMutation(`review-event:${event.id}`, () => saveReviewEvent(event).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, reviewEvents: previousEvents }));
+          throw error;
+        }
+      },
+      async upsertReviewDayPlan(plan) {
+        const previousPlans = dataRef.current.reviewDayPlans;
+        updateData((current) => {
+          const exists = current.reviewDayPlans.some((item) => item.plan_date === plan.plan_date);
+          return {
+            ...current,
+            reviewDayPlans: exists
+              ? current.reviewDayPlans.map((item) => (item.plan_date === plan.plan_date ? plan : item))
+              : [...current.reviewDayPlans, plan],
+          };
+        });
+        try {
+          await enqueueMutation(`review-day-plan:${plan.plan_date}`, () => saveReviewDayPlan(plan).then(() => undefined));
+        } catch (error) {
+          updateData((current) => ({ ...current, reviewDayPlans: previousPlans }));
           throw error;
         }
       },

@@ -11,6 +11,8 @@ import type {
   GradeComponent,
   Material,
   MaterialFolder,
+  ReviewDayPlan,
+  ReviewEvent,
   Subject,
   Topic,
 } from "@/types/domain";
@@ -45,6 +47,8 @@ function readDemoData(): AppData {
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
     assessmentMaterials: parsed.assessmentMaterials ?? [],
+    reviewEvents: parsed.reviewEvents ?? [],
+    reviewDayPlans: parsed.reviewDayPlans ?? [],
     materials: parsed.materials ?? [],
     materialFolders: parsed.materialFolders ?? [],
   };
@@ -76,6 +80,8 @@ export async function loadAppData(): Promise<AppData> {
     assessments,
     assessmentTopics,
     assessmentMaterials,
+    reviewEvents,
+    reviewDayPlans,
     materials,
     materialFolders,
   ] = await Promise.all([
@@ -88,6 +94,8 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("assessment_materials").select("*").order("created_at"),
+    supabase.from("review_events").select("*").order("created_at", { ascending: false }).limit(240),
+    supabase.from("review_day_plans").select("*").order("plan_date"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
     supabase.from("material_folders").select("*").order("parent_folder_id", { nullsFirst: true }).order("sort_order", { nullsFirst: true }).order("name"),
   ]);
@@ -106,6 +114,8 @@ export async function loadAppData(): Promise<AppData> {
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
     assessmentMaterials: assessmentMaterials.error ? [] : assessmentMaterials.data ?? [],
+    reviewEvents: reviewEvents.error ? [] : reviewEvents.data ?? [],
+    reviewDayPlans: reviewDayPlans.error ? [] : reviewDayPlans.data ?? [],
     materials: materials.data ?? [],
     materialFolders: materialFolders.error ? [] : materialFolders.data ?? [],
   } as AppData;
@@ -514,6 +524,45 @@ export async function saveAssessmentMaterialProgress(item: AssessmentMaterial) {
     .single();
   if (error) throw error;
   return data as AssessmentMaterial;
+}
+
+export async function saveReviewEvent(event: ReviewEvent) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    data.reviewEvents = [event, ...data.reviewEvents.filter((item) => item.id !== event.id)];
+    writeDemoData(data);
+    return event;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("review_events")
+    .insert({ ...event, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ReviewEvent;
+}
+
+export async function saveReviewDayPlan(plan: ReviewDayPlan) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.reviewDayPlans.some((item) => item.plan_date === plan.plan_date);
+    data.reviewDayPlans = exists
+      ? data.reviewDayPlans.map((item) => (item.plan_date === plan.plan_date ? plan : item))
+      : [...data.reviewDayPlans, plan];
+    writeDemoData(data);
+    return plan;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("review_day_plans")
+    .upsert({ ...plan, user_id }, { onConflict: "user_id,plan_date" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ReviewDayPlan;
 }
 
 export async function saveGradeComponent(component: GradeComponent) {

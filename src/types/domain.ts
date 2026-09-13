@@ -12,6 +12,8 @@ export type DemandStatus = "pendente" | "em_andamento" | "concluido";
 export type DemandQuestionDifficulty = "facil" | "media" | "dificil";
 export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
 export type TopicMasteryLevel = 0 | 1 | 2 | 3;
+export type ReviewTargetType = "topic" | "material";
+export type ReviewAction = "completed" | "postponed" | "auto_rescheduled";
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
 export type GradeComponentCalculation = "average" | "weighted";
@@ -133,6 +135,30 @@ export type AssessmentMaterial = {
   created_at?: string;
 };
 
+export type ReviewEvent = {
+  id: string;
+  user_id?: string;
+  subject_id: string;
+  target_type: ReviewTargetType;
+  target_title: string;
+  topic_id?: string | null;
+  assessment_id?: string | null;
+  material_id?: string | null;
+  action: ReviewAction;
+  scheduled_for: string;
+  resulting_review_date?: string | null;
+  mastery_level?: TopicMasteryLevel | null;
+  created_at: string;
+};
+
+export type ReviewDayPlan = {
+  user_id?: string;
+  plan_date: string;
+  capacity: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type MaterialType = "file" | "link";
 
 export type MaterialFolder = {
@@ -168,6 +194,8 @@ export type AppData = {
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];
   assessmentMaterials: AssessmentMaterial[];
+  reviewEvents: ReviewEvent[];
+  reviewDayPlans: ReviewDayPlan[];
   materials: Material[];
   materialFolders: MaterialFolder[];
 };

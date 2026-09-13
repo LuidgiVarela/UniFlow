@@ -157,6 +157,7 @@ export default function SubjectDetailPage() {
     materials,
     topics,
     loading,
+    pendingOperations,
     completeDemand,
     getMaterialUrl,
     removeDemand,
@@ -571,8 +572,9 @@ export default function SubjectDetailPage() {
 
   function renderAssessment(assessment: Assessment, result = false) {
     const gradeComponent = gradeComponents.find((component) => component.id === assessment.grade_component_id) ?? null;
+    const isDeleting = Boolean(pendingOperations[`delete:assessment:${assessment.id}`]);
     return (
-      <article className="simple-row assessment-list-row" key={assessment.id}>
+      <article aria-busy={isDeleting} className={`simple-row assessment-list-row ${isDeleting ? "is-pending-removal" : ""}`} key={assessment.id}>
         <div className="demand-main">
           <strong>{assessment.name}</strong>
           <div className="demand-meta">
@@ -585,8 +587,10 @@ export default function SubjectDetailPage() {
         </div>
         <StatusPill tone={assessment.status}>{assessmentStatusLabels[assessment.status]}</StatusPill>
         <div className="row-actions">
-          <button className="icon-button" onClick={() => setEditingAssessment(assessment)} type="button"><Edit size={15} /></button>
-          <button className="icon-button danger" onClick={() => removeAssessment(assessment.id)} type="button"><Trash2 size={15} /></button>
+          <button className="icon-button" disabled={isDeleting} onClick={() => setEditingAssessment(assessment)} title="Editar avaliação" type="button"><Edit size={15} /></button>
+          <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => void removeAssessment(assessment.id).catch(() => undefined)} title="Excluir avaliação" type="button">
+            {isDeleting ? null : <Trash2 size={15} />}
+          </button>
         </div>
       </article>
     );
@@ -1123,8 +1127,8 @@ export default function SubjectDetailPage() {
           </div>
           <div className="quiet-list">
             {subjectDemands.map((demand) => (
-              <article className={`simple-row task-row ${demand.status === "concluido" ? "done" : ""}`} key={demand.id}>
-                <button aria-label={demand.status === "concluido" ? "Marcar como pendente" : "Marcar como concluída"} className={`check-button ${demand.status === "concluido" ? "checked" : ""}`} onClick={() => completeDemand(demand)} type="button">
+              <article aria-busy={Boolean(pendingOperations[`delete:demand:${demand.id}`])} className={`simple-row task-row ${demand.status === "concluido" ? "done" : ""} ${pendingOperations[`delete:demand:${demand.id}`] ? "is-pending-removal" : ""}`} key={demand.id}>
+                <button aria-label={demand.status === "concluido" ? "Marcar como pendente" : "Marcar como concluída"} className={`check-button ${demand.status === "concluido" ? "checked" : ""}`} disabled={Boolean(pendingOperations[`delete:demand:${demand.id}`])} onClick={() => completeDemand(demand)} type="button">
                   {demand.status === "concluido" ? "✓" : ""}
                 </button>
                 <div>
@@ -1141,8 +1145,10 @@ export default function SubjectDetailPage() {
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
                 <div className="row-actions">
-                  <button className="icon-button" onClick={() => setEditingDemand(demand)} type="button"><Edit size={15} /></button>
-                  <button className="icon-button danger" onClick={() => removeDemand(demand.id)} type="button"><Trash2 size={15} /></button>
+                  <button className="icon-button" disabled={Boolean(pendingOperations[`delete:demand:${demand.id}`])} onClick={() => setEditingDemand(demand)} title="Editar tarefa" type="button"><Edit size={15} /></button>
+                  <button className={`icon-button danger ${pendingOperations[`delete:demand:${demand.id}`] ? "is-loading" : ""}`} disabled={Boolean(pendingOperations[`delete:demand:${demand.id}`])} onClick={() => void removeDemand(demand.id).catch(() => undefined)} title="Excluir tarefa" type="button">
+                    {pendingOperations[`delete:demand:${demand.id}`] ? null : <Trash2 size={15} />}
+                  </button>
                 </div>
               </article>
             ))}

@@ -49,9 +49,14 @@ import type {
 } from "@/types/domain";
 import type { MaterialStorageUsage } from "@/lib/repositories/uniflow-repository";
 
+const MIN_OPERATION_FEEDBACK_MS = 360;
+
 type DataContextValue = AppData & {
   loading: boolean;
   loadError: string | null;
+  pendingOperations: Readonly<Record<string, string>>;
+  operationError: string | null;
+  clearOperationError: () => void;
   refresh: (showLoading?: boolean) => Promise<void>;
   upsertSubject: (subject: Subject) => Promise<void>;
   removeSubject: (id: string) => Promise<void>;
@@ -118,9 +123,48 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const emptyRetryRef = useRef(false);
   const retryShowLoadingRef = useRef(true);
   const mutationQueues = useRef<Record<string, Promise<void>>>({});
+  const operationTokens = useRef<Record<string, symbol>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingOperations, setPendingOperations] = useState<Record<string, string>>({});
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
+
+  const clearOperationError = useCallback(() => setOperationError(null), []);
+
+  const trackOperation = useCallback(async (
+    key: string,
+    label: string,
+    operation: () => Promise<void>,
+  ) => {
+    const startedAt = Date.now();
+    const token = Symbol(key);
+    operationTokens.current[key] = token;
+    setOperationError(null);
+    setPendingOperations((current) => ({ ...current, [key]: label }));
+    try {
+      await operation();
+    } catch (error) {
+      const message = error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : "Não foi possível concluir a alteração.";
+      setOperationError(message);
+      throw error;
+    } finally {
+      const remainingFeedbackTime = MIN_OPERATION_FEEDBACK_MS - (Date.now() - startedAt);
+      const clearPendingOperation = () => {
+        if (operationTokens.current[key] !== token) return;
+        delete operationTokens.current[key];
+        setPendingOperations((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      };
+      if (remainingFeedbackTime > 0) window.setTimeout(clearPendingOperation, remainingFeedbackTime);
+      else clearPendingOperation();
+    }
+  }, []);
 
   const scheduleRetry = useCallback((showLoading: boolean, delay: number) => {
     retryShowLoadingRef.current = showLoading;
@@ -181,6 +225,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ...data,
       loading,
       loadError,
+      pendingOperations,
+      operationError,
+      clearOperationError,
       refresh,
       async upsertSubject(subject) {
         const previousSubjects = dataRef.current.subjects;
@@ -201,8 +248,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       },
       async removeSubject(id) {
-        await deleteSubject(id);
-        await refresh(false);
+        await trackOperation(`delete:subject:${id}`, "Excluindo matéria...", async () => {
+          await deleteSubject(id);
+          await refresh(false);
+        });
       },
       async reorderSubjects(ids) {
         await persistSubjectOrder(ids);
@@ -213,8 +262,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await refresh(false);
       },
       async removeDemand(id) {
-        await deleteDemand(id);
-        await refresh(false);
+        await trackOperation(`delete:demand:${id}`, "Excluindo tarefa...", async () => {
+          await deleteDemand(id);
+          await refresh(false);
+        });
       },
       async completeDemand(demand) {
         let previousDemand = demand;
@@ -279,16 +330,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       async removeDemandQuestionItem(id) {
         const previousItems = dataRef.current.demandQuestionItems;
-        updateData((current) => ({
-          ...current,
-          demandQuestionItems: current.demandQuestionItems.filter((item) => item.id !== id),
-        }));
-        try {
-          await deleteDemandQuestionItem(id);
-        } catch (error) {
-          updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
-          throw error;
-        }
+        await trackOperation(`delete:demand-question-item:${id}`, "Excluindo item...", async () => {
+          updateData((current) => ({
+            ...current,
+            demandQuestionItems: current.demandQuestionItems.filter((item) => item.id !== id),
+          }));
+          try {
+            await deleteDemandQuestionItem(id);
+          } catch (error) {
+            updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
+            throw error;
+          }
+        });
       },
       async generateDemandQuestions(demandId, questionCount, itemLabels, requestedStart) {
         await generateDemandQuestionSet(demandId, questionCount, itemLabels, requestedStart);
@@ -313,8 +366,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       },
       async removeTopic(id) {
-        await deleteTopic(id);
-        await refresh(false);
+        await trackOperation(`delete:topic:${id}`, "Excluindo conteúdo...", async () => {
+          await deleteTopic(id);
+          await refresh(false);
+        });
       },
       async upsertAssessment(assessment, topicIds, materialIds) {
         await saveAssessment(assessment, topicIds, materialIds);
@@ -381,16 +436,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       },
       async removeAssessment(id) {
-        await deleteAssessment(id);
-        await refresh(false);
+        await trackOperation(`delete:assessment:${id}`, "Excluindo avaliação...", async () => {
+          await deleteAssessment(id);
+          await refresh(false);
+        });
       },
       async upsertGradeComponent(component) {
         await saveGradeComponent(component);
         await refresh(false);
       },
       async removeGradeComponent(id) {
-        await deleteGradeComponent(id);
-        await refresh(false);
+        await trackOperation(`delete:grade-component:${id}`, "Excluindo critério...", async () => {
+          await deleteGradeComponent(id);
+          await refresh(false);
+        });
       },
       async upsertMaterial(material) {
         await saveMaterial(material);
@@ -401,8 +460,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await refresh(false);
       },
       async removeMaterialFolder(id) {
-        await deleteMaterialFolder(id);
-        await refresh(false);
+        await trackOperation(`delete:material-folder:${id}`, "Excluindo pasta...", async () => {
+          await deleteMaterialFolder(id);
+          await refresh(false);
+        });
       },
       async reorderMaterialFolders(folders) {
         const previousFolders = dataRef.current.materialFolders;
@@ -447,8 +508,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       },
       async removeMaterial(material) {
-        await deleteMaterial(material);
-        await refresh(false);
+        await trackOperation(`delete:material:${material.id}`, "Excluindo material...", async () => {
+          await deleteMaterial(material);
+          await refresh(false);
+        });
       },
       async getMaterialUrl(material) {
         return materialPublicUrl(material);
@@ -457,7 +520,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return getMaterialStorageUsage();
       },
     }),
-    [data, loadError, loading, refresh],
+    [clearOperationError, data, loadError, loading, operationError, pendingOperations, refresh, trackOperation],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

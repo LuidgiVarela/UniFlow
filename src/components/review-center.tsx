@@ -57,7 +57,7 @@ function nearestAvailability(value: number) {
 
 function eventActionLabel(action: ReviewAction) {
   if (action === "completed") return "Revisão concluída";
-  if (action === "postponed") return "Adiada manualmente";
+  if (action === "postponed") return "Remarcada manualmente";
   return "Replanejada";
 }
 
@@ -94,7 +94,8 @@ export function ReviewCenter() {
   const savedTodayPlan = reviewDayPlans.find((plan) => plan.plan_date === today);
   const inferredCapacity = nearestAvailability(learnedCapacityForDate(today, reviewEvents));
   const [todayCapacity, setTodayCapacity] = useState(savedTodayPlan?.capacity ?? inferredCapacity);
-  const [savingCapacity, setSavingCapacity] = useState(false);
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [savingPlanDate, setSavingPlanDate] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [planPreview, setPlanPreview] = useState<ReviewScheduleChange[] | null>(null);
@@ -165,7 +166,7 @@ export function ReviewCenter() {
     }
   }
 
-  async function postponeReview(entry: ReviewEntry, nextReviewDate: string) {
+  async function rescheduleReview(entry: ReviewEntry, nextReviewDate: string) {
     const mastery = storedMastery(entry);
     const now = new Date();
     setFeedback(null);
@@ -180,7 +181,9 @@ export function ReviewCenter() {
       setFeedback({
         tone: historySaved ? "success" : "warning",
         message: historySaved
-          ? `Revisão de “${entry.title}” remarcada para ${formatDate(nextReviewDate)}.`
+          ? nextReviewDate === today
+            ? `Revisão de “${entry.title}” adicionada à fila de hoje.`
+            : `Revisão de “${entry.title}” remarcada para ${formatDate(nextReviewDate)}.`
           : `Revisão remarcada, mas o histórico não pôde ser registrado.`,
       });
     } catch (error) {
@@ -193,27 +196,34 @@ export function ReviewCenter() {
     }
   }
 
-  async function changeAvailability(capacity: number) {
+  function availabilityForDate(date: string) {
+    if (date === today) return todayCapacity;
+    const savedPlan = reviewDayPlans.find((plan) => plan.plan_date === date);
+    return savedPlan?.capacity ?? nearestAvailability(learnedCapacityForDate(date, reviewEvents));
+  }
+
+  async function changeAvailability(capacity: number, date = today) {
     const previous = todayCapacity;
     const now = new Date().toISOString();
-    setTodayCapacity(capacity);
-    setSavingCapacity(true);
+    const savedPlan = reviewDayPlans.find((plan) => plan.plan_date === date);
+    if (date === today) setTodayCapacity(capacity);
+    setSavingPlanDate(date);
     setFeedback(null);
     try {
       await upsertReviewDayPlan({
-        plan_date: today,
+        plan_date: date,
         capacity,
-        created_at: savedTodayPlan?.created_at ?? now,
+        created_at: savedPlan?.created_at ?? now,
         updated_at: now,
       });
     } catch (error) {
-      setTodayCapacity(previous);
+      if (date === today) setTodayCapacity(previous);
       setFeedback({
         tone: "error",
         message: error instanceof Error ? error.message : "Não foi possível salvar sua disponibilidade.",
       });
     } finally {
-      setSavingCapacity(false);
+      setSavingPlanDate(null);
     }
   }
 
@@ -298,8 +308,8 @@ export function ReviewCenter() {
           {availabilityOptions.map((option) => (
             <button
               aria-pressed={todayCapacity === option.value}
-              className={todayCapacity === option.value ? "active" : ""}
-              disabled={savingCapacity}
+              className={`${todayCapacity === option.value ? "active" : ""} ${savingPlanDate === today && todayCapacity === option.value ? "is-loading" : ""}`}
+              disabled={Boolean(savingPlanDate)}
               key={option.value}
               onClick={() => void changeAvailability(option.value)}
               type="button"
@@ -309,15 +319,21 @@ export function ReviewCenter() {
             </button>
           ))}
         </div>
-        <button
-          className="primary-button review-plan-button"
-          disabled={savingCapacity || applyingPlan || !dueEntries.length}
-          onClick={previewSmartPlan}
-          type="button"
-        >
-          <RefreshCw aria-hidden="true" size={16} />
-          Replanejar dia
-        </button>
+        <div className="review-planner-actions">
+          <button className="ghost-action" onClick={() => setAvailabilityOpen(true)} type="button">
+            <CalendarDays aria-hidden="true" size={16} />
+            Planejar semana
+          </button>
+          <button
+            className="primary-button review-plan-button"
+            disabled={Boolean(savingPlanDate) || applyingPlan || !dueEntries.length}
+            onClick={previewSmartPlan}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            Replanejar dia
+          </button>
+        </div>
       </section>
 
       {feedback ? <p className={`review-center-feedback ${feedback.tone}`} role="status">{feedback.message}</p> : null}
@@ -332,7 +348,7 @@ export function ReviewCenter() {
             <strong>{dueEntries.length}</strong>
           </header>
           {dueEntries.length ? (
-            <ReviewList entries={dueEntries} onComplete={completeReview} onPostpone={postponeReview} savingKey={savingKey} />
+            <ReviewList entries={dueEntries} onComplete={completeReview} onPostpone={rescheduleReview} savingKey={savingKey} />
           ) : (
             <div className="review-center-empty"><Check aria-hidden="true" size={19} /><strong>Fila concluída por hoje.</strong></div>
           )}
@@ -395,26 +411,87 @@ export function ReviewCenter() {
               <section className="review-upcoming-day" key={date}>
                 <header><time>{formatDate(date)}</time><span>{dateEntries.length} {dateEntries.length === 1 ? "item" : "itens"}</span></header>
                 <div>
-                  {dateEntries.map((entry) => (
-                    <Link
-                      href={reviewHref(entry)}
-                      key={entry.key}
-                      rel={entry.kind === "material" ? "noreferrer" : undefined}
-                      style={{ "--review-color": entry.subject.color } as CSSProperties}
-                      target={entry.kind === "material" ? "_blank" : undefined}
-                    >
-                      <span>{entry.subject.code}</span>
-                      <strong>{entry.title}</strong>
-                      <small>{entry.kind === "topic" ? "Conteúdo" : "Material"}</small>
-                      <ChevronRight aria-hidden="true" size={15} />
-                    </Link>
-                  ))}
+                  {dateEntries.map((entry) => {
+                    const isMoving = savingKey === entry.key;
+                    return (
+                      <article className="review-upcoming-item" key={entry.key}>
+                        <Link
+                          href={reviewHref(entry)}
+                          rel={entry.kind === "material" ? "noreferrer" : undefined}
+                          style={{ "--review-color": entry.subject.color } as CSSProperties}
+                          target={entry.kind === "material" ? "_blank" : undefined}
+                        >
+                          <span>{entry.subject.code}</span>
+                          <strong>{entry.title}</strong>
+                          <small>{entry.kind === "topic" ? "Conteúdo" : "Material"}</small>
+                          <ChevronRight aria-hidden="true" size={15} />
+                        </Link>
+                        <button
+                          className={`ghost-action tiny ${isMoving ? "is-loading" : ""}`}
+                          disabled={isMoving}
+                          onClick={() => void rescheduleReview(entry, today)}
+                          title="Adicionar à fila de hoje"
+                          type="button"
+                        >
+                          {isMoving ? null : <CalendarClock aria-hidden="true" size={15} />}
+                          {isMoving ? "Movendo" : "Trazer para hoje"}
+                        </button>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
             ))}
           </div>
         ) : <div className="review-center-empty"><CalendarDays aria-hidden="true" size={19} /><strong>Nenhuma revisão futura agendada.</strong></div>}
       </Panel>
+
+      {availabilityOpen ? (
+        <div className="modal-backdrop">
+          <section aria-labelledby="review-availability-title" className="modal review-availability-modal">
+            <header className="modal-header">
+              <div>
+                <h2 id="review-availability-title">Disponibilidade da semana</h2>
+                <p>Quantidade de revisões que cabe em cada dia</p>
+              </div>
+              <button aria-label="Fechar" className="icon-button" disabled={Boolean(savingPlanDate)} onClick={() => setAvailabilityOpen(false)} type="button"><X size={17} /></button>
+            </header>
+            <div className="review-availability-week">
+              {weekLoad.map((day) => {
+                const capacity = availabilityForDate(day.date);
+                const isSaving = savingPlanDate === day.date;
+                return (
+                  <article aria-busy={isSaving} key={day.date}>
+                    <div>
+                      <strong>{day.label}</strong>
+                      <span>{day.shortDate} · {day.scheduled} {day.scheduled === 1 ? "agendada" : "agendadas"}</span>
+                    </div>
+                    <div aria-label={`Disponibilidade de ${day.label}`} className="review-day-capacity-options" role="group">
+                      {availabilityOptions.map((option) => (
+                        <button
+                          aria-pressed={capacity === option.value}
+                          className={`${capacity === option.value ? "active" : ""} ${isSaving && capacity === option.value ? "is-loading" : ""}`}
+                          disabled={Boolean(savingPlanDate)}
+                          key={option.value}
+                          onClick={() => void changeAvailability(option.value, day.date)}
+                          title={`${option.label}: ${option.value} revisões`}
+                          type="button"
+                        >
+                          <span>{option.label}</span>
+                          <strong>{option.value}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <footer className="review-plan-footer">
+              <button className="primary-button" disabled={Boolean(savingPlanDate)} onClick={() => setAvailabilityOpen(false)} type="button">Concluir</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
 
       {planPreview ? (
         <div className="modal-backdrop">

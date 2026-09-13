@@ -252,6 +252,70 @@ h3 {
   padding: 14px clamp(18px, 4vw, 52px) 0;
 }
 
+.app-operation-status {
+  position: fixed;
+  z-index: 90;
+  top: 14px;
+  right: 18px;
+  width: min(360px, calc(100vw - 84px));
+  min-height: 38px;
+  padding: 8px 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--foreground);
+  background: #111214;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+  animation: operationStatusIn 160ms ease-out;
+}
+
+.app-operation-status > span:last-of-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.app-operation-status.error {
+  border-color: rgba(217, 108, 108, 0.48);
+  color: #ff9b9b;
+}
+
+.app-operation-status.error > svg {
+  flex: 0 0 auto;
+}
+
+.app-operation-status button {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  color: currentColor;
+  background: transparent;
+}
+
+.app-operation-status button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.app-operation-spinner {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.72s linear infinite;
+}
+
 .sidebar-toggle-button {
   display: inline-flex;
 }
@@ -742,6 +806,17 @@ h3 {
   white-space: nowrap;
 }
 
+.review-planner-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-planner-actions > button {
+  white-space: nowrap;
+}
+
 .review-center-feedback {
   padding: 11px 14px;
   border-left: 2px solid #66c78a;
@@ -992,32 +1067,45 @@ h3 {
   padding-left: 16px;
 }
 
-.review-upcoming-day a {
+.review-upcoming-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.review-upcoming-item:last-child {
+  border-bottom: 0;
+}
+
+.review-upcoming-item > a {
   min-width: 0;
   min-height: 48px;
   display: grid;
   grid-template-columns: 50px minmax(0, 1fr) 78px 18px;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--line-soft);
 }
 
-.review-upcoming-day a:last-child {
-  border-bottom: 0;
+.review-upcoming-item > button {
+  min-height: 32px;
+  margin-right: 2px;
 }
 
-.review-upcoming-day a:hover strong {
+.review-upcoming-item > a:hover strong {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.review-upcoming-day a > span {
+.review-upcoming-item > a > span {
   color: var(--review-color, var(--accent));
   font-size: 0.72rem;
   font-weight: 760;
 }
 
-.review-upcoming-day a strong {
+.review-upcoming-item > a strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1025,13 +1113,130 @@ h3 {
   font-size: 0.82rem;
 }
 
-.review-upcoming-day a small,
-.review-upcoming-day a svg {
+.review-upcoming-item > a small,
+.review-upcoming-item > a svg {
   color: var(--muted);
   font-size: 0.7rem;
 }
 
-.review-plan-modal {
+.modal.review-availability-modal {
+  width: min(860px, 100%);
+  max-height: min(760px, calc(100dvh - 40px));
+  padding: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.review-availability-modal .modal-header {
+  padding: 17px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.review-availability-modal .modal-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.review-availability-modal .modal-header h2 {
+  margin-bottom: 0;
+}
+
+.review-availability-modal .modal-header p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.review-availability-week {
+  min-height: 0;
+  padding: 0 18px;
+  overflow-y: auto;
+}
+
+.review-availability-week > article {
+  min-width: 0;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.review-availability-week > article:last-child {
+  border-bottom: 0;
+}
+
+.review-availability-week > article > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.review-availability-week > article > div:first-child strong {
+  text-transform: capitalize;
+}
+
+.review-availability-week > article > div:first-child span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.review-day-capacity-options {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.review-day-capacity-options button {
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  background: transparent;
+}
+
+.review-day-capacity-options button:last-child {
+  border-right: 0;
+}
+
+.review-day-capacity-options button:hover,
+.review-day-capacity-options button.active {
+  color: var(--foreground);
+  background: var(--surface-strong);
+}
+
+.review-day-capacity-options button.active {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.review-day-capacity-options button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.review-day-capacity-options span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.review-day-capacity-options strong {
+  font-size: 0.78rem;
+}
+
+.modal.review-plan-modal {
   width: min(820px, 100%);
   max-height: min(760px, calc(100dvh - 40px));
   padding: 0;
@@ -1372,6 +1577,26 @@ h3 {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes operationStatusIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes pendingRemoval {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 0.44;
+  }
+}
+
+.is-pending-removal {
+  animation: pendingRemoval 0.8s ease-in-out infinite alternate;
 }
 
 @keyframes loadingSlide {
@@ -4719,10 +4944,14 @@ body.is-resizing-material-tree {
   }
 
   .review-availability-options,
-  .review-plan-button {
+  .review-planner-actions {
     grid-column: 1;
     grid-row: auto;
     width: 100%;
+  }
+
+  .review-planner-actions > button {
+    flex: 1 1 0;
   }
 
   .review-queue-row {
@@ -4993,6 +5222,40 @@ body.is-resizing-material-tree {
     border-bottom: 1px solid var(--line);
   }
 
+  .review-planner-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-upcoming-item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding-bottom: 10px;
+  }
+
+  .review-upcoming-item > button {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .review-availability-week > article {
+    padding: 12px 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .review-day-capacity-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-day-capacity-options button:nth-child(2) {
+    border-right: 0;
+  }
+
+  .review-day-capacity-options button:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
   .review-plan-list article {
     padding: 10px 0;
     grid-template-columns: 44px minmax(0, 1fr) 18px 58px;
@@ -5062,5 +5325,15 @@ body.is-resizing-material-tree {
 
   .material-file-pane .material-folder-row > .row-actions {
     grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-operation-status,
+  .app-operation-spinner,
+  .is-loading::before,
+  .is-pending-removal {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
   }
 }

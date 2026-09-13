@@ -19,6 +19,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   CalendarX2,
   BookOpenCheck,
+  CircleAlert,
   Home,
   LogOut,
   Menu,
@@ -47,15 +48,20 @@ function formatBytes(bytes: number) {
 function SortableSubjectLink({
   subject,
   active,
+  removing,
   onNavigate,
   onRemove,
 }: {
   subject: Subject;
   active: boolean;
+  removing: boolean;
   onNavigate: () => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: subject.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: subject.id,
+    disabled: removing,
+  });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -63,7 +69,8 @@ function SortableSubjectLink({
 
   return (
     <div
-      className={`subject-nav-row ${active ? "active" : ""} ${isDragging ? "dragging" : ""}`}
+      aria-busy={removing}
+      className={`subject-nav-row ${active ? "active" : ""} ${isDragging ? "dragging" : ""} ${removing ? "is-pending-removal" : ""}`}
       ref={setNodeRef}
       style={style}
       {...attributes}
@@ -79,13 +86,14 @@ function SortableSubjectLink({
         <span>{subject.code}</span>
       </Link>
       <button
-        className="subject-remove-button"
+        className={`subject-remove-button ${removing ? "is-loading" : ""}`}
+        disabled={removing}
         onClick={onRemove}
         onPointerDown={(event) => event.stopPropagation()}
         title="Remover matéria"
         type="button"
       >
-        <Trash2 size={13} />
+        {removing ? null : <Trash2 size={13} />}
       </button>
     </div>
   );
@@ -102,12 +110,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const { demoMode, signOut, user } = useAuth();
-  const { demands, getStorageUsage, loadError, loading, materials, refresh, removeSubject, subjects, reorderSubjects } = useAppData();
+  const {
+    clearOperationError,
+    demands,
+    getStorageUsage,
+    loadError,
+    loading,
+    materials,
+    operationError,
+    pendingOperations,
+    refresh,
+    removeSubject,
+    subjects,
+    reorderSubjects,
+  } = useAppData();
   const pdfEditorMode = pathname.startsWith("/materiais/editar/");
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const storagePercent = storageUsage
     ? Math.min(100, Math.round((storageUsage.usedBytes / storageUsage.limitBytes) * 100))
     : 0;
+  const activeOperation = Object.values(pendingOperations).at(-1) ?? null;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
@@ -179,8 +201,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   async function handleRemoveSubject(subject: Subject) {
     const ok = window.confirm(`Remover "${subject.name}"? Isso apaga a matéria e seus dados vinculados.`);
     if (!ok) return;
-    await removeSubject(subject.id);
-    if (pathname === `/materias/${subject.id}`) router.push("/");
+    try {
+      await removeSubject(subject.id);
+      if (pathname === `/materias/${subject.id}`) router.push("/");
+    } catch {
+      // A mensagem detalhada aparece no indicador global da operação.
+    }
   }
 
   function toggleSidebar() {
@@ -222,7 +248,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     active={pathname === `/materias/${subject.id}`}
                     key={subject.id}
                     onNavigate={() => setMenuOpen(false)}
-                    onRemove={() => handleRemoveSubject(subject)}
+                    onRemove={() => void handleRemoveSubject(subject)}
+                    removing={Boolean(pendingOperations[`delete:subject:${subject.id}`])}
                     subject={subject}
                   />
                 ))}
@@ -257,6 +284,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="mobile-toggle-icon">{menuOpen ? <X size={20} /> : <Menu size={20} />}</span>
             <span className="desktop-toggle-icon">{sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}</span>
           </button>
+          {operationError ? (
+            <div aria-live="assertive" className="app-operation-status error" role="alert">
+              <CircleAlert aria-hidden="true" size={16} />
+              <span>{operationError}</span>
+              <button aria-label="Fechar aviso" onClick={clearOperationError} type="button"><X size={14} /></button>
+            </div>
+          ) : activeOperation ? (
+            <div aria-live="polite" className="app-operation-status" role="status">
+              <span aria-hidden="true" className="app-operation-spinner" />
+              <span>{activeOperation}</span>
+            </div>
+          ) : null}
         </header>
         <main className="content">
           {loading ? (

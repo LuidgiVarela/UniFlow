@@ -12,7 +12,7 @@ import { assessmentStatusLabels, assessmentTypeLabels } from "@/lib/labels";
 import type { Assessment } from "@/types/domain";
 
 export default function NotesPage() {
-  const { subjects, gradeComponents, assessments, removeAssessment } = useAppData();
+  const { subjects, gradeComponents, assessments, pendingOperations, removeAssessment } = useAppData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Assessment | null>(null);
 
@@ -41,8 +41,9 @@ export default function NotesPage() {
   function assessmentLine(assessment: Assessment, result = false) {
     const subject = subjectFor(assessment.subject_id);
     const gradeComponent = gradeComponents.find((component) => component.id === assessment.grade_component_id) ?? null;
+    const isDeleting = Boolean(pendingOperations[`delete:assessment:${assessment.id}`]);
     return (
-      <article className="assessment-row" key={assessment.id}>
+      <article aria-busy={isDeleting} className={`assessment-row ${isDeleting ? "is-pending-removal" : ""}`} key={assessment.id}>
         <span className="subject-chip" style={{ borderColor: subject?.color }}>{subject?.code}</span>
         <div className="demand-main">
           <strong>{assessment.name}</strong>
@@ -55,8 +56,10 @@ export default function NotesPage() {
         </div>
         <StatusPill tone={assessment.status}>{assessmentStatusLabels[assessment.status]}</StatusPill>
         <div className="row-actions">
-          <button className="icon-button" onClick={() => setEditing(assessment)} type="button"><Edit size={15} /></button>
-          <button className="icon-button danger" onClick={() => removeAssessment(assessment.id)} type="button"><Trash2 size={15} /></button>
+          <button className="icon-button" disabled={isDeleting} onClick={() => setEditing(assessment)} title="Editar avaliação" type="button"><Edit size={15} /></button>
+          <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => void removeAssessment(assessment.id).catch(() => undefined)} title="Excluir avaliação" type="button">
+            {isDeleting ? null : <Trash2 size={15} />}
+          </button>
         </div>
       </article>
     );

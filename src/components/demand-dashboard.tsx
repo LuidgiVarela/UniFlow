@@ -271,7 +271,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
                     >
                       <Star size={12} />
                     </button>
-                    <button className="question-item-remove" onClick={() => removeDemandQuestionItem(item.id)} title="Remover item" type="button">
+                    <button className="question-item-remove" onClick={() => void removeDemandQuestionItem(item.id).catch(() => undefined)} title="Remover item" type="button">
                       <Trash2 size={13} />
                     </button>
                   </div>

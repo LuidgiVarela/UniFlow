@@ -43,7 +43,7 @@ export function GradeCriteriaManager({
   assessments: Assessment[];
   subjectId: string;
 }) {
-  const { gradeComponents, removeGradeComponent, upsertGradeComponent } = useAppData();
+  const { gradeComponents, pendingOperations, removeGradeComponent, upsertGradeComponent } = useAppData();
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<GradeComponent>(createBlankComponent(subjectId));
   const [saving, setSaving] = useState(false);
@@ -95,7 +95,11 @@ export function GradeCriteriaManager({
       `Excluir o critério "${component.name}"? As avaliações continuam salvas, apenas deixam de ficar agrupadas nele.`,
     );
     if (!ok) return;
-    await removeGradeComponent(component.id);
+    try {
+      await removeGradeComponent(component.id);
+    } catch {
+      // A falha permanece visível no indicador global.
+    }
   }
 
   return (
@@ -123,50 +127,53 @@ export function GradeCriteriaManager({
       </section>
 
       <div className="grade-component-list">
-        {summaries.map((summary) => (
-          <section className="grade-component-card" key={summary.component.id}>
-            <div className="grade-component-header">
-              <div>
-                <strong>{summary.component.name}</strong>
-                <small>
-                  {summary.component.weight === null ? "Peso não definido" : `${summary.component.weight}% da nota`}
-                  {summary.component.expected_count ? ` - ${summary.gradedAssessments.length} de ${summary.component.expected_count} lançadas` : ""}
-                </small>
-                <small>{calculationLabels[summary.component.calculation]}</small>
-                {summary.hasMissingWeights ? <small className="warning-text">Há nota sem peso dentro do critério.</small> : null}
+        {summaries.map((summary) => {
+          const isDeleting = Boolean(pendingOperations[`delete:grade-component:${summary.component.id}`]);
+          return (
+            <section aria-busy={isDeleting} className={`grade-component-card ${isDeleting ? "is-pending-removal" : ""}`} key={summary.component.id}>
+              <div className="grade-component-header">
+                <div>
+                  <strong>{summary.component.name}</strong>
+                  <small>
+                    {summary.component.weight === null ? "Peso não definido" : `${summary.component.weight}% da nota`}
+                    {summary.component.expected_count ? ` - ${summary.gradedAssessments.length} de ${summary.component.expected_count} lançadas` : ""}
+                  </small>
+                  <small>{calculationLabels[summary.component.calculation]}</small>
+                  {summary.hasMissingWeights ? <small className="warning-text">Há nota sem peso dentro do critério.</small> : null}
+                </div>
+                <div className="grade-component-score">
+                  <strong>{summary.average === null ? "--" : summary.average.toFixed(1)}</strong>
+                  <small>
+                    {summary.contribution === null
+                      ? "sem contribuição"
+                      : `${summary.contribution.toFixed(2)} ponto(s) em ${summary.evaluatedWeight.toFixed(summary.evaluatedWeight % 1 === 0 ? 0 : 2)}%`}
+                  </small>
+                </div>
+                <div className="row-actions">
+                  <button className="icon-button" disabled={isDeleting} onClick={() => openComponentModal(summary.component)} title="Editar critério" type="button">
+                    <Edit size={15} />
+                  </button>
+                  <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => void deleteComponent(summary.component)} title="Excluir critério" type="button">
+                    {isDeleting ? null : <Trash2 size={15} />}
+                  </button>
+                </div>
               </div>
-              <div className="grade-component-score">
-                <strong>{summary.average === null ? "--" : summary.average.toFixed(1)}</strong>
-                <small>
-                  {summary.contribution === null
-                    ? "sem contribuição"
-                    : `${summary.contribution.toFixed(2)} ponto(s) em ${summary.evaluatedWeight.toFixed(summary.evaluatedWeight % 1 === 0 ? 0 : 2)}%`}
-                </small>
+              <div className="grade-mini-list">
+                {summary.assessments.length ? (
+                  summary.assessments.map((assessment) => (
+                    <article key={assessment.id}>
+                      <span>{assessment.name}</span>
+                      <small>{[formatDate(assessment.date), assessmentWeightText(assessment, summary.component)].filter(Boolean).join(" - ")}</small>
+                      <strong>{isAssessmentGraded(assessment) ? scoreText(assessment) : "sem nota"}</strong>
+                    </article>
+                  ))
+                ) : (
+                  <p className="muted compact-note">Nenhuma avaliação vinculada ainda.</p>
+                )}
               </div>
-              <div className="row-actions">
-                <button className="icon-button" onClick={() => openComponentModal(summary.component)} title="Editar critério" type="button">
-                  <Edit size={15} />
-                </button>
-                <button className="icon-button danger" onClick={() => deleteComponent(summary.component)} title="Excluir critério" type="button">
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-            <div className="grade-mini-list">
-              {summary.assessments.length ? (
-                summary.assessments.map((assessment) => (
-                  <article key={assessment.id}>
-                    <span>{assessment.name}</span>
-                    <small>{[formatDate(assessment.date), assessmentWeightText(assessment, summary.component)].filter(Boolean).join(" - ")}</small>
-                    <strong>{isAssessmentGraded(assessment) ? scoreText(assessment) : "sem nota"}</strong>
-                  </article>
-                ))
-              ) : (
-                <p className="muted compact-note">Nenhuma avaliação vinculada ainda.</p>
-              )}
-            </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
         {uncategorized.length ? (
           <section className="grade-component-card">
             <div className="grade-component-header">

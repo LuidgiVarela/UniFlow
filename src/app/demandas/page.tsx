@@ -12,7 +12,7 @@ import { sortDemandsByPriorityAndDate } from "@/lib/priority";
 import type { Demand, DemandStatus, DemandType } from "@/types/domain";
 
 export default function DemandsPage() {
-  const { subjects, demands, completeDemand, removeDemand } = useAppData();
+  const { subjects, demands, completeDemand, pendingOperations, removeDemand } = useAppData();
   const [editing, setEditing] = useState<Demand | null>(null);
   const [subjectFilter, setSubjectFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState<DemandStatus | "todos">("todos");
@@ -57,8 +57,9 @@ export default function DemandsPage() {
         <div className="table-list">
           {filtered.map((demand) => {
             const subject = subjects.find((item) => item.id === demand.subject_id);
+            const isDeleting = Boolean(pendingOperations[`delete:demand:${demand.id}`]);
             return (
-              <article className="demand-row" key={demand.id}>
+              <article aria-busy={isDeleting} className={`demand-row ${isDeleting ? "is-pending-removal" : ""}`} key={demand.id}>
                 <span className="subject-chip" style={{ borderColor: subject?.color }}>{subject?.code}</span>
                 <div className="demand-main">
                   <strong>{demand.title}</strong>
@@ -71,9 +72,11 @@ export default function DemandsPage() {
                 </div>
                 <StatusPill tone={demand.priority}>{priorityLabels[demand.priority]}</StatusPill>
                 <div className="row-actions">
-                  <button className="icon-button" onClick={() => completeDemand(demand)} title="Concluir" type="button"><Check size={16} /></button>
-                  <button className="icon-button" onClick={() => setEditing(demand)} title="Editar" type="button"><Edit size={16} /></button>
-                  <button className="icon-button danger" onClick={() => removeDemand(demand.id)} title="Excluir" type="button"><Trash2 size={16} /></button>
+                  <button className="icon-button" disabled={isDeleting} onClick={() => completeDemand(demand)} title="Concluir" type="button"><Check size={16} /></button>
+                  <button className="icon-button" disabled={isDeleting} onClick={() => setEditing(demand)} title="Editar" type="button"><Edit size={16} /></button>
+                  <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => void removeDemand(demand.id).catch(() => undefined)} title="Excluir" type="button">
+                    {isDeleting ? null : <Trash2 size={16} />}
+                  </button>
                 </div>
               </article>
             );

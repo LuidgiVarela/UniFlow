@@ -10,9 +10,19 @@ import { assessmentDaysText, nextAssessment } from "@/lib/academic";
 import type { Subject } from "@/types/domain";
 
 export default function SubjectsPage() {
-  const { subjects, demands, assessments, removeSubject } = useAppData();
+  const { subjects, demands, assessments, pendingOperations, removeSubject } = useAppData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Subject | null>(null);
+
+  async function deleteSubject(subject: Subject) {
+    const confirmed = window.confirm(`Remover "${subject.name}"? Isso apaga a matéria e seus dados vinculados.`);
+    if (!confirmed) return;
+    try {
+      await removeSubject(subject.id);
+    } catch {
+      // A falha permanece visível no indicador global.
+    }
+  }
 
   return (
     <>
@@ -26,8 +36,9 @@ export default function SubjectsPage() {
           {subjects.map((subject) => {
             const pending = demands.filter((demand) => demand.subject_id === subject.id && demand.status !== "concluido").length;
             const upcoming = nextAssessment(assessments, subject.id);
+            const isDeleting = Boolean(pendingOperations[`delete:subject:${subject.id}`]);
             return (
-              <article className="subject-card" key={subject.id}>
+              <article aria-busy={isDeleting} className={`subject-card ${isDeleting ? "is-pending-removal" : ""}`} key={subject.id}>
                 <span className="color-dot" style={{ background: subject.color }} />
                 <Link href={`/materias/${subject.id}`}>
                   <h3>{subject.code}</h3>
@@ -37,8 +48,10 @@ export default function SubjectsPage() {
                 <small>{upcoming ? `${upcoming.name} em ${assessmentDaysText(upcoming)}` : "Sem avaliação futura"}</small>
                 <small>{pending} demandas pendentes</small>
                 <div className="row-actions">
-                  <button className="icon-button" onClick={() => setEditing(subject)} type="button"><Edit size={16} /></button>
-                  <button className="icon-button danger" onClick={() => removeSubject(subject.id)} type="button"><Trash2 size={16} /></button>
+                  <button className="icon-button" disabled={isDeleting} onClick={() => setEditing(subject)} title="Editar matéria" type="button"><Edit size={16} /></button>
+                  <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => void deleteSubject(subject)} title="Excluir matéria" type="button">
+                    {isDeleting ? null : <Trash2 size={16} />}
+                  </button>
                 </div>
               </article>
             );

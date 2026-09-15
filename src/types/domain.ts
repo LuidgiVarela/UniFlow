@@ -14,6 +14,7 @@ export type TopicStatus = "nao_iniciado" | "estudando" | "concluido";
 export type TopicMasteryLevel = 0 | 1 | 2 | 3;
 export type ReviewTargetType = "topic" | "material";
 export type ReviewAction = "completed" | "postponed" | "auto_rescheduled";
+export type ReviewQueueState = "available" | "planned" | "dismissed" | "completed";
 export type AssessmentType = "prova" | "trabalho" | "lista" | "projeto" | "seminario" | "outro";
 export type AssessmentStatus = "futura" | "realizada" | "corrigida";
 export type GradeComponentCalculation = "average" | "weighted";
@@ -159,6 +160,29 @@ export type ReviewDayPlan = {
   updated_at?: string;
 };
 
+export type ReviewQueueItem = {
+  id: string;
+  user_id?: string;
+  queue_date: string;
+  target_key: string;
+  target_type: ReviewTargetType;
+  subject_id: string;
+  topic_id?: string | null;
+  assessment_id?: string | null;
+  material_id?: string | null;
+  state: ReviewQueueState;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type TopicPrerequisite = {
+  topic_id: string;
+  prerequisite_topic_id: string;
+  user_id?: string;
+  created_at?: string;
+};
+
 export type MaterialType = "file" | "link";
 
 export type MaterialFolder = {
@@ -184,6 +208,17 @@ export type Material = {
   created_at: string;
 };
 
+export type SubjectClassProgress = {
+  subject_id: string;
+  user_id?: string;
+  material_id?: string | null;
+  page_number?: number | null;
+  note?: string | null;
+  marked_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type AppData = {
   subjects: Subject[];
   demands: Demand[];
@@ -196,6 +231,9 @@ export type AppData = {
   assessmentMaterials: AssessmentMaterial[];
   reviewEvents: ReviewEvent[];
   reviewDayPlans: ReviewDayPlan[];
+  reviewQueueItems: ReviewQueueItem[];
+  topicPrerequisites: TopicPrerequisite[];
   materials: Material[];
   materialFolders: MaterialFolder[];
+  subjectClassProgress: SubjectClassProgress[];
 };

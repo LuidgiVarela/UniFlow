@@ -3,6 +3,8 @@
 import {
   ArrowLeft,
   ArrowUp,
+  Bookmark,
+  BookmarkCheck,
   ChevronDown,
   ChevronRight,
   Download,
@@ -18,6 +20,7 @@ import {
   Plus,
   TextCursorInput,
   Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
@@ -155,6 +158,7 @@ export default function SubjectDetailPage() {
     gradeComponents,
     materialFolders,
     materials,
+    subjectClassProgress,
     topics,
     loading,
     pendingOperations,
@@ -168,6 +172,7 @@ export default function SubjectDetailPage() {
     reorderMaterials,
     upsertMaterial,
     upsertMaterialFolder,
+    upsertSubjectClassProgress,
   } = useAppData();
   const tab = tabs.find((item) => item.query === searchParams.get("aba"))?.id ?? "overview";
   const [editSubjectOpen, setEditSubjectOpen] = useState(false);
@@ -197,6 +202,12 @@ export default function SubjectDetailPage() {
   const [materialName, setMaterialName] = useState("");
   const [materialNameError, setMaterialNameError] = useState<string | null>(null);
   const [savingMaterialName, setSavingMaterialName] = useState(false);
+  const [classProgressOpen, setClassProgressOpen] = useState(false);
+  const [classProgressMaterialId, setClassProgressMaterialId] = useState("");
+  const [classProgressPage, setClassProgressPage] = useState("1");
+  const [classProgressNote, setClassProgressNote] = useState("");
+  const [classProgressError, setClassProgressError] = useState<string | null>(null);
+  const [savingClassProgress, setSavingClassProgress] = useState(false);
   const [materialTreeWidth, setMaterialTreeWidth] = useState(MATERIAL_TREE_DEFAULT_WIDTH);
   const breadcrumbRef = useRef<HTMLElement | null>(null);
   const folderActionsRef = useRef<HTMLDetailsElement | null>(null);
@@ -406,6 +417,10 @@ export default function SubjectDetailPage() {
   });
   const currentDropTargetId = `current-folder:${currentFolderId ?? "root"}`;
   const currentItemCount = currentFolders.length + currentMaterials.length;
+  const classProgress = subjectClassProgress.find((item) => item.subject_id === subject.id) ?? null;
+  const classProgressMaterial = classProgress?.material_id
+    ? subjectMaterials.find((material) => material.id === classProgress.material_id) ?? null
+    : null;
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -802,6 +817,70 @@ export default function SubjectDetailPage() {
     }
   }
 
+  function openClassProgress(material?: Material) {
+    const target = material ?? classProgressMaterial ?? subjectMaterials.find(isPdfMaterial) ?? null;
+    setClassProgressMaterialId(target?.id ?? "");
+    setClassProgressPage(
+      target?.id === classProgress?.material_id && classProgress?.page_number
+        ? String(classProgress.page_number)
+        : "1",
+    );
+    setClassProgressNote(target?.id === classProgress?.material_id ? classProgress?.note ?? "" : "");
+    setClassProgressError(null);
+    setClassProgressOpen(true);
+  }
+
+  async function saveClassProgress(event: React.FormEvent) {
+    event.preventDefault();
+    const material = subjectMaterials.find((item) => item.id === classProgressMaterialId);
+    if (!material || !isPdfMaterial(material)) {
+      setClassProgressError("Selecione um PDF desta matéria.");
+      return;
+    }
+    const pageNumber = Math.max(1, Math.round(Number(classProgressPage) || 1));
+    const now = new Date().toISOString();
+    setSavingClassProgress(true);
+    setClassProgressError(null);
+    try {
+      await upsertSubjectClassProgress({
+        subject_id: subjectId,
+        material_id: material.id,
+        page_number: pageNumber,
+        note: classProgressNote.trim() || null,
+        marked_at: now,
+        created_at: classProgress?.created_at ?? now,
+        updated_at: now,
+      });
+      setClassProgressOpen(false);
+    } catch (error) {
+      setClassProgressError(error instanceof Error ? error.message : "Não foi possível salvar o ponto da turma.");
+    } finally {
+      setSavingClassProgress(false);
+    }
+  }
+
+  async function clearClassProgress() {
+    const now = new Date().toISOString();
+    setSavingClassProgress(true);
+    setClassProgressError(null);
+    try {
+      await upsertSubjectClassProgress({
+        subject_id: subjectId,
+        material_id: null,
+        page_number: null,
+        note: null,
+        marked_at: null,
+        created_at: classProgress?.created_at ?? now,
+        updated_at: now,
+      });
+      setClassProgressOpen(false);
+    } catch (error) {
+      setClassProgressError(error instanceof Error ? error.message : "Não foi possível limpar o marcador.");
+    } finally {
+      setSavingClassProgress(false);
+    }
+  }
+
   async function downloadCurrentFolderZip() {
     setMaterialError(null);
     setZipStatus("Preparando ZIP...");
@@ -967,7 +1046,14 @@ export default function SubjectDetailPage() {
   }
 
   function renderMaterial(material: Material) {
-    const href = materialUrls[material.id] || `/materiais/abrir/${material.id}`;
+    const isClassProgress = classProgress?.material_id === material.id && Boolean(classProgress.page_number);
+    const directHref = materialUrls[material.id];
+    const fallbackHref = `/materiais/abrir/${encodeURIComponent(material.id)}`;
+    const href = isClassProgress
+      ? directHref
+        ? `${directHref}#page=${classProgress!.page_number}`
+        : `${fallbackHref}?page=${classProgress!.page_number}`
+      : directHref || fallbackHref;
     const isDeleting = deletingMaterialIds.has(material.id);
     const canReorderHere =
       draggedMaterialId !== null &&
@@ -977,7 +1063,7 @@ export default function SubjectDetailPage() {
       );
     return (
       <article
-        className={`simple-row material-row ${draggedMaterialId === material.id ? "dragging" : ""} ${dragOverMaterialId === material.id ? "drag-over" : ""}`}
+        className={`simple-row material-row ${isClassProgress ? "class-progress" : ""} ${draggedMaterialId === material.id ? "dragging" : ""} ${dragOverMaterialId === material.id ? "drag-over" : ""}`}
         draggable={!isDeleting}
         key={material.id}
         onDragEnd={() => {
@@ -1013,7 +1099,10 @@ export default function SubjectDetailPage() {
         title="Arraste para reorganizar ou mover"
       >
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
-        <strong>{material.name}</strong>
+        <div className="material-name-stack">
+          <strong>{material.name}</strong>
+          {isClassProgress ? <small><BookmarkCheck aria-hidden="true" size={12} />Turma · página {classProgress!.page_number}</small> : null}
+        </div>
         <div className="row-actions">
           <a
             className="icon-button"
@@ -1025,15 +1114,27 @@ export default function SubjectDetailPage() {
             <ExternalLink size={15} />
           </a>
           {isPdfMaterial(material) ? (
-            <a
-              className="icon-button"
-              href={`/materiais/editar/${material.id}`}
-              rel="noreferrer"
-              target="_blank"
-              title="Editar PDF"
-            >
-              <FilePenLine size={15} />
-            </a>
+            <>
+              <a
+                className="icon-button"
+                href={`/materiais/editar/${material.id}`}
+                rel="noreferrer"
+                target="_blank"
+                title="Editar PDF"
+              >
+                <FilePenLine size={15} />
+              </a>
+              <button
+                aria-label={isClassProgress ? "Editar ponto da turma" : "Marcar onde a turma parou"}
+                className={`icon-button ${isClassProgress ? "active" : ""}`}
+                disabled={isDeleting}
+                onClick={() => openClassProgress(material)}
+                title={isClassProgress ? "Editar ponto da turma" : "Marcar onde a turma parou"}
+                type="button"
+              >
+                {isClassProgress ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+              </button>
+            </>
           ) : null}
           <button
             className="icon-button"
@@ -1213,6 +1314,15 @@ export default function SubjectDetailPage() {
               <button className="ghost-action" onClick={() => openFolderModal()} type="button"><FolderPlus size={16} />Nova pasta</button>
               <button className="ghost-action" onClick={() => setMaterialOpen(true)} type="button"><Plus size={16} />Adicionar material</button>
               <button
+                aria-label={classProgressMaterial ? "Editar ponto da turma" : "Marcar onde a turma parou"}
+                className={`icon-button material-command-button ${classProgressMaterial ? "active" : ""}`}
+                onClick={() => openClassProgress()}
+                title={classProgressMaterial ? "Editar ponto da turma" : "Marcar onde a turma parou"}
+                type="button"
+              >
+                {classProgressMaterial ? <BookmarkCheck size={17} /> : <Bookmark size={17} />}
+              </button>
+              <button
                 aria-label={activeFolder ? "Baixar conteúdo desta pasta" : "Baixar todos os materiais"}
                 className={`icon-button material-command-button ${zipStatus ? "is-loading" : ""}`}
                 disabled={Boolean(zipStatus)}
@@ -1314,6 +1424,25 @@ export default function SubjectDetailPage() {
               })}
             </nav>
           </div>
+
+          {classProgressMaterial && classProgress?.page_number ? (
+            <div className="material-class-progress-banner">
+              <BookmarkCheck aria-hidden="true" size={16} />
+              <div>
+                <span>Ponto da turma</span>
+                <strong>{classProgressMaterial.name} · página {classProgress.page_number}</strong>
+                {classProgress.note ? <small>{classProgress.note}</small> : null}
+              </div>
+              <a
+                className="ghost-action"
+                href={`/materiais/abrir/${classProgressMaterial.id}?page=${classProgress.page_number}`}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Abrir<ExternalLink size={14} />
+              </a>
+            </div>
+          ) : null}
 
           {zipStatus ? <p className="form-message material-zip-status">{zipStatus}</p> : null}
           {materialError ? <p className="form-message error-message">{materialError}</p> : null}
@@ -1448,6 +1577,45 @@ export default function SubjectDetailPage() {
             <button className={`primary-button full ${savingMaterialName ? "is-loading" : ""}`} disabled={savingMaterialName} type="submit">
               {savingMaterialName ? "Salvando..." : "Salvar nome"}
             </button>
+          </form>
+        </div>
+      ) : null}
+      {classProgressOpen ? (
+        <div className="modal-backdrop">
+          <form className="modal form-stack class-progress-modal" onSubmit={saveClassProgress}>
+            <div className="modal-header">
+              <div>
+                <h2>Ponto da turma</h2>
+                <p>Onde o professor parou nesta matéria</p>
+              </div>
+              <button aria-label="Fechar" className="icon-button" disabled={savingClassProgress} onClick={() => setClassProgressOpen(false)} type="button"><X size={17} /></button>
+            </div>
+            <label>
+              PDF
+              <select onChange={(event) => setClassProgressMaterialId(event.target.value)} required value={classProgressMaterialId}>
+                <option value="">Selecione um PDF</option>
+                {subjectMaterials.filter(isPdfMaterial).map((material) => (
+                  <option key={material.id} value={material.id}>{material.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Página
+              <input min={1} onChange={(event) => setClassProgressPage(event.target.value)} required type="number" value={classProgressPage} />
+            </label>
+            <label>
+              Observação <span className="muted">opcional</span>
+              <textarea onChange={(event) => setClassProgressNote(event.target.value)} placeholder="Ex.: terminou a explicação do exemplo 2" rows={4} value={classProgressNote} />
+            </label>
+            {classProgressError ? <p className="form-message error-message" role="alert">{classProgressError}</p> : null}
+            <div className="class-progress-modal-actions">
+              {classProgressMaterial ? (
+                <button className="ghost-action" disabled={savingClassProgress} onClick={() => void clearClassProgress()} type="button">Limpar marcador</button>
+              ) : <span />}
+              <button className={`primary-button ${savingClassProgress ? "is-loading" : ""}`} disabled={savingClassProgress} type="submit">
+                {savingClassProgress ? "Salvando" : "Salvar ponto"}
+              </button>
+            </div>
           </form>
         </div>
       ) : null}

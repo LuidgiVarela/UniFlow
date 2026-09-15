@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addAssessmentTopics as persistAssessmentTopics,
   deleteAssessment,
   deleteDemand,
   deleteDemandQuestionItem,
@@ -15,6 +16,7 @@ import {
   loadAppData,
   materialPublicUrl,
   replaceMaterialFile as persistMaterialFileReplacement,
+  replaceTopicPrerequisites as persistTopicPrerequisites,
   reorderMaterials as persistMaterialOrder,
   reorderMaterialFolders as persistMaterialFolderOrder,
   reorderSubjects as persistSubjectOrder,
@@ -28,7 +30,9 @@ import {
   saveMaterialFolder,
   saveReviewDayPlan,
   saveReviewEvent,
+  saveReviewQueueItem,
   saveSubject,
+  saveSubjectClassProgress,
   saveTopic,
   uploadMaterialFile,
 } from "@/lib/repositories/uniflow-repository";
@@ -44,7 +48,9 @@ import type {
   MaterialFolder,
   ReviewDayPlan,
   ReviewEvent,
+  ReviewQueueItem,
   Subject,
+  SubjectClassProgress,
   Topic,
 } from "@/types/domain";
 import type { MaterialStorageUsage } from "@/lib/repositories/uniflow-repository";
@@ -76,9 +82,13 @@ type DataContextValue = AppData & {
   upsertTopic: (topic: Topic) => Promise<void>;
   removeTopic: (id: string) => Promise<void>;
   upsertAssessment: (assessment: Assessment, topicIds?: string[], materialIds?: string[]) => Promise<void>;
+  addAssessmentTopics: (assessmentId: string, topicIds: string[]) => Promise<void>;
   upsertAssessmentMaterialProgress: (item: AssessmentMaterial) => Promise<void>;
   addReviewEvent: (event: ReviewEvent) => Promise<void>;
   upsertReviewDayPlan: (plan: ReviewDayPlan) => Promise<void>;
+  upsertReviewQueueItem: (item: ReviewQueueItem) => Promise<void>;
+  setTopicPrerequisites: (topicId: string, prerequisiteIds: string[]) => Promise<void>;
+  upsertSubjectClassProgress: (progress: SubjectClassProgress) => Promise<void>;
   removeAssessment: (id: string) => Promise<void>;
   upsertGradeComponent: (component: GradeComponent) => Promise<void>;
   removeGradeComponent: (id: string) => Promise<void>;
@@ -108,8 +118,11 @@ const emptyData: AppData = {
   assessmentMaterials: [],
   reviewEvents: [],
   reviewDayPlans: [],
+  reviewQueueItems: [],
+  topicPrerequisites: [],
   materials: [],
   materialFolders: [],
+  subjectClassProgress: [],
 };
 
 function isCompletelyEmpty(data: AppData) {
@@ -375,6 +388,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await saveAssessment(assessment, topicIds, materialIds);
         await refresh(false);
       },
+      async addAssessmentTopics(assessmentId, topicIds) {
+        if (!topicIds.length) return;
+        await persistAssessmentTopics(assessmentId, topicIds);
+        updateData((current) => {
+          const existing = new Set(
+            current.assessmentTopics
+              .filter((item) => item.assessment_id === assessmentId)
+              .map((item) => item.topic_id),
+          );
+          return {
+            ...current,
+            assessmentTopics: [
+              ...current.assessmentTopics,
+              ...topicIds.filter((topicId) => !existing.has(topicId)).map((topic_id) => ({
+                assessment_id: assessmentId,
+                topic_id,
+              })),
+            ],
+          };
+        });
+      },
       async upsertAssessmentMaterialProgress(item) {
         const previousItems = dataRef.current.assessmentMaterials;
         updateData((current) => {
@@ -432,6 +466,69 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           await enqueueMutation(`review-day-plan:${plan.plan_date}`, () => saveReviewDayPlan(plan).then(() => undefined));
         } catch (error) {
           updateData((current) => ({ ...current, reviewDayPlans: previousPlans }));
+          throw error;
+        }
+      },
+      async upsertReviewQueueItem(item) {
+        const previousItems = dataRef.current.reviewQueueItems;
+        updateData((current) => {
+          const existingIndex = current.reviewQueueItems.findIndex((currentItem) => (
+            currentItem.queue_date === item.queue_date && currentItem.target_key === item.target_key
+          ));
+          return {
+            ...current,
+            reviewQueueItems: existingIndex >= 0
+              ? current.reviewQueueItems.map((currentItem, index) => index === existingIndex ? item : currentItem)
+              : [...current.reviewQueueItems, item],
+          };
+        });
+        try {
+          await enqueueMutation(
+            `review-queue:${item.queue_date}:${item.target_key}`,
+            () => saveReviewQueueItem(item).then(() => undefined),
+          );
+        } catch (error) {
+          updateData((current) => ({ ...current, reviewQueueItems: previousItems }));
+          throw error;
+        }
+      },
+      async setTopicPrerequisites(topicId, prerequisiteIds) {
+        const previousItems = dataRef.current.topicPrerequisites;
+        updateData((current) => ({
+          ...current,
+          topicPrerequisites: [
+            ...current.topicPrerequisites.filter((item) => item.topic_id !== topicId),
+            ...prerequisiteIds.map((prerequisite_topic_id) => ({ topic_id: topicId, prerequisite_topic_id })),
+          ],
+        }));
+        try {
+          await enqueueMutation(
+            `topic-prerequisites:${topicId}`,
+            () => persistTopicPrerequisites(topicId, prerequisiteIds),
+          );
+        } catch (error) {
+          updateData((current) => ({ ...current, topicPrerequisites: previousItems }));
+          throw error;
+        }
+      },
+      async upsertSubjectClassProgress(progress) {
+        const previousItems = dataRef.current.subjectClassProgress;
+        updateData((current) => {
+          const exists = current.subjectClassProgress.some((item) => item.subject_id === progress.subject_id);
+          return {
+            ...current,
+            subjectClassProgress: exists
+              ? current.subjectClassProgress.map((item) => item.subject_id === progress.subject_id ? progress : item)
+              : [...current.subjectClassProgress, progress],
+          };
+        });
+        try {
+          await enqueueMutation(
+            `subject-class-progress:${progress.subject_id}`,
+            () => saveSubjectClassProgress(progress).then(() => undefined),
+          );
+        } catch (error) {
+          updateData((current) => ({ ...current, subjectClassProgress: previousItems }));
           throw error;
         }
       },

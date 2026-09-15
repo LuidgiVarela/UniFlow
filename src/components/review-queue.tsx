@@ -5,18 +5,34 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useAppData } from "@/components/data-provider";
 import { Panel } from "@/components/ui";
-import { daysUntil, formatDate } from "@/lib/date";
-import { buildReviewEntries, dueReason, dueReviewEntries, futureReviewEntries } from "@/lib/reviews";
+import { daysUntil } from "@/lib/date";
+import {
+  buildReviewEntries,
+  completedReviewsOn,
+  dueReason,
+  localIsoDate,
+  sortReviewEntries,
+} from "@/lib/reviews";
 
 const OVERVIEW_REVIEW_LIMIT = 3;
 
 export function ReviewQueue() {
   const appData = useAppData();
   const entries = buildReviewEntries(appData);
-  const dueEntries = dueReviewEntries(entries);
-  const visibleEntries = dueEntries.slice(0, OVERVIEW_REVIEW_LIMIT);
-  const futureEntries = futureReviewEntries(entries);
-  const overdueCount = dueEntries.filter((entry) => entry.nextReviewDate && daysUntil(entry.nextReviewDate) < 0).length;
+  const today = localIsoDate();
+  const entryByKey = new Map(entries.map((entry) => [entry.key, entry]));
+  const todayItems = appData.reviewQueueItems
+    .filter((item) => item.queue_date === today)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const selectedEntries = todayItems
+    .filter((item) => item.state === "planned")
+    .map((item) => entryByKey.get(item.target_key))
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const hiddenKeys = new Set(todayItems.filter((item) => item.state !== "available").map((item) => item.target_key));
+  const suggestedEntries = sortReviewEntries(entries).filter((entry) => !hiddenKeys.has(entry.key));
+  const visibleEntries = (selectedEntries.length ? selectedEntries : suggestedEntries).slice(0, OVERVIEW_REVIEW_LIMIT);
+  const overdueCount = entries.filter((entry) => entry.nextReviewDate && daysUntil(entry.nextReviewDate) < 0).length;
+  const completedToday = completedReviewsOn(today, appData.reviewEvents);
 
   return (
     <Panel className="plain-section review-overview-panel">
@@ -24,14 +40,12 @@ export function ReviewQueue() {
         <div>
           <div className="review-queue-title-line">
             <BookOpenCheck aria-hidden="true" size={19} />
-            <h2>Revisões de hoje</h2>
+            <h2>{selectedEntries.length ? "Minha fila de hoje" : "Prioridades de revisão"}</h2>
           </div>
           <p className="review-queue-caption">
-            {dueEntries.length
-              ? `${dueEntries.length} ${dueEntries.length === 1 ? "prioridade" : "prioridades"}${overdueCount ? ` · ${overdueCount} ${overdueCount === 1 ? "atrasada" : "atrasadas"}` : ""}`
-              : futureEntries[0]?.nextReviewDate
-                ? `Tudo em dia · próxima em ${formatDate(futureEntries[0].nextReviewDate)}`
-                : "Tudo em dia"}
+            {selectedEntries.length
+              ? `${selectedEntries.length} ${selectedEntries.length === 1 ? "item escolhido" : "itens escolhidos"} · ${completedToday} concluídos`
+              : `${suggestedEntries.length} ${suggestedEntries.length === 1 ? "opção priorizada" : "opções priorizadas"}${overdueCount ? ` · ${overdueCount} ${overdueCount === 1 ? "atrasada" : "atrasadas"}` : ""}`}
           </p>
         </div>
         <Link className="ghost-action" href="/revisoes">
@@ -58,9 +72,9 @@ export function ReviewQueue() {
               <ChevronRight aria-hidden="true" size={16} />
             </Link>
           ))}
-          {dueEntries.length > OVERVIEW_REVIEW_LIMIT ? (
+          {(selectedEntries.length ? selectedEntries.length : suggestedEntries.length) > OVERVIEW_REVIEW_LIMIT ? (
             <Link className="review-overview-more" href="/revisoes">
-              Mais {dueEntries.length - OVERVIEW_REVIEW_LIMIT} na fila
+              Mais {(selectedEntries.length ? selectedEntries.length : suggestedEntries.length) - OVERVIEW_REVIEW_LIMIT}
               <ChevronRight aria-hidden="true" size={15} />
             </Link>
           ) : null}
@@ -68,7 +82,7 @@ export function ReviewQueue() {
       ) : (
         <div className="review-queue-empty">
           <Check aria-hidden="true" size={18} />
-          <strong>Nenhuma revisão pendente.</strong>
+          <strong>Nenhuma revisão disponível.</strong>
         </div>
       )}
     </Panel>

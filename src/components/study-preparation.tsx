@@ -9,15 +9,18 @@ import {
   FileText,
   ListTodo,
   Pencil,
+  Sparkles,
   Target,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState, type CSSProperties } from "react";
 import { useAppData } from "@/components/data-provider";
+import { AiTopicDraftModal } from "@/components/ai-topic-draft-modal";
 import { assessmentDaysText } from "@/lib/academic";
 import { daysUntil, formatDate } from "@/lib/date";
 import { isAssessmentUpcoming } from "@/lib/grades";
 import { assessmentTypeLabels, demandTypeLabels, topicStatusLabels } from "@/lib/labels";
+import { calculateReadiness } from "@/lib/study-readiness";
 import type {
   Assessment,
   AssessmentMaterial,
@@ -30,7 +33,7 @@ import type {
 } from "@/types/domain";
 
 const masteryOptions: Array<{ level: TopicMasteryLevel; label: string; reviewDays: number | null }> = [
-  { level: 0, label: "Pendente", reviewDays: null },
+  { level: 0, label: "Não estudado", reviewDays: null },
   { level: 1, label: "Frágil", reviewDays: 1 },
   { level: 2, label: "Revisando", reviewDays: 3 },
   { level: 3, label: "Seguro", reviewDays: 7 },
@@ -54,6 +57,7 @@ type StudyUnit = {
   topic?: Topic;
   material?: Material;
   assessmentMaterial?: AssessmentMaterial;
+  unmetPrerequisiteTitles: string[];
 };
 
 type StudyPlanItem = {
@@ -110,6 +114,8 @@ function nextReviewText(unit: StudyUnit) {
 
 function buildStudyPlan(units: StudyUnit[], assessmentDate: string | null): StudyPlanItem[] {
   const ordered = [...units].sort((a, b) => {
+    const dependencyDifference = Number(Boolean(a.unmetPrerequisiteTitles.length)) - Number(Boolean(b.unmetPrerequisiteTitles.length));
+    if (dependencyDifference !== 0) return dependencyDifference;
     const aDue = a.next_review_date && daysUntil(a.next_review_date) <= 0 ? 0 : 1;
     const bDue = b.next_review_date && daysUntil(b.next_review_date) <= 0 ? 0 : 1;
     if (aDue !== bDue) return aDue - bDue;
@@ -155,10 +161,11 @@ export function StudyPreparation({
   materials,
   onEditAssessment,
 }: StudyPreparationProps) {
-  const { upsertAssessmentMaterialProgress, upsertTopic } = useAppData();
+  const { topicPrerequisites, upsertAssessmentMaterialProgress, upsertTopic } = useAppData();
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
   const [savingUnitIds, setSavingUnitIds] = useState<Set<string>>(() => new Set());
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
   const upcomingAssessments = useMemo(
     () => assessments
       .filter(isAssessmentUpcoming)
@@ -209,6 +216,21 @@ export function StudyPreparation({
       mastery_level: topic.mastery_level,
       next_review_date: topic.next_review_date,
       topic,
+      unmetPrerequisiteTitles: topicPrerequisites
+        .filter((relation) => relation.topic_id === topic.id)
+        .map((relation) => topics.find((candidate) => candidate.id === relation.prerequisite_topic_id))
+        .filter((candidate): candidate is Topic => Boolean(candidate))
+        .filter((candidate) => masteryLevel({
+          key: candidate.id,
+          kind: "topic",
+          title: candidate.title,
+          subtitle: "",
+          orderIndex: candidate.order_index,
+          mastery_level: candidate.mastery_level,
+          topic: candidate,
+          unmetPrerequisiteTitles: [],
+        }) < 2)
+        .map((candidate) => candidate.title),
     })),
     ...preparationMaterials.map((material, index) => {
       const link = linkedMaterialById.get(material.id)!;
@@ -222,13 +244,16 @@ export function StudyPreparation({
         next_review_date: link.next_review_date,
         material,
         assessmentMaterial: link,
+        unmetPrerequisiteTitles: [],
       };
     }),
   ];
   const levels = studyUnits.map(masteryLevel);
-  const readiness = levels.length
-    ? Math.round((levels.reduce<number>((total, level) => total + level, 0) / (levels.length * 3)) * 100)
-    : 0;
+  const readiness = calculateReadiness(studyUnits.map((unit) => ({
+    mastery: masteryLevel(unit),
+    nextReviewDate: unit.next_review_date,
+    unmetPrerequisiteCount: unit.unmetPrerequisiteTitles.length,
+  })));
   const reviewedCount = levels.filter((level) => level >= 2).length;
   const pendingDemands = demands.filter((demand) => demand.status !== "concluido");
   const recentMaterials = materials
@@ -275,19 +300,24 @@ export function StudyPreparation({
           <h2>Preparação</h2>
           <span className="preparation-assessment-type">{assessmentTypeLabels[selectedAssessment.type]}</span>
         </div>
-        <label className="preparation-assessment-picker">
-          <span>Avaliação</span>
-          <select
-            onChange={(event) => setSelectedAssessmentId(event.target.value)}
-            value={selectedAssessment.id}
-          >
-            {upcomingAssessments.map((assessment) => (
-              <option key={assessment.id} value={assessment.id}>
-                {assessment.name}{assessment.date ? ` · ${formatDate(assessment.date)}` : " · sem data"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="preparation-toolbar-actions">
+          <button className="ghost-action" onClick={() => setAiDraftOpen(true)} type="button">
+            <Sparkles aria-hidden="true" size={16} />Gerar tópicos dos PDFs
+          </button>
+          <label className="preparation-assessment-picker">
+            <span>Avaliação</span>
+            <select
+              onChange={(event) => setSelectedAssessmentId(event.target.value)}
+              value={selectedAssessment.id}
+            >
+              {upcomingAssessments.map((assessment) => (
+                <option key={assessment.id} value={assessment.id}>
+                  {assessment.name}{assessment.date ? ` · ${formatDate(assessment.date)}` : " · sem data"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </header>
 
       <section className="preparation-summary" aria-label={`Preparação para ${selectedAssessment.name}`}>
@@ -311,7 +341,7 @@ export function StudyPreparation({
           >
             <span style={{ width: `${readiness}%` }} />
           </div>
-          <small>Baseada no domínio dos conteúdos e materiais selecionados</small>
+          <small>Estimativa conservadora: domínio, revisões vencidas e pré-requisitos</small>
         </div>
         <dl className="preparation-metrics">
           <div>
@@ -397,6 +427,12 @@ export function StudyPreparation({
                           </a>
                         ) : null}
                       </small>
+                      {unit.unmetPrerequisiteTitles.length ? (
+                        <small className="preparation-prerequisite-warning">
+                          <CircleAlert aria-hidden="true" size={13} />
+                          Estude antes: {unit.unmetPrerequisiteTitles.join(", ")}
+                        </small>
+                      ) : null}
                     </div>
                     <div aria-label={`Domínio de ${unit.title}`} className="mastery-segmented-control" role="group">
                       {masteryOptions.map((option) => (
@@ -499,6 +535,16 @@ export function StudyPreparation({
           </section>
         </aside>
       </div>
+      {aiDraftOpen ? (
+        <AiTopicDraftModal
+          assessment={selectedAssessment}
+          linkedMaterialIds={linkedMaterialRows.map((item) => item.material_id)}
+          materials={materials}
+          onClose={() => setAiDraftOpen(false)}
+          subject={subject}
+          topics={topics}
+        />
+      ) : null}
     </div>
   );
 }

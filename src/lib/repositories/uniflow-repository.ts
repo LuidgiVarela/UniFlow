@@ -13,8 +13,11 @@ import type {
   MaterialFolder,
   ReviewDayPlan,
   ReviewEvent,
+  ReviewQueueItem,
   Subject,
+  SubjectClassProgress,
   Topic,
+  TopicPrerequisite,
 } from "@/types/domain";
 
 const DEMO_KEY = "uniflow:demo-data";
@@ -49,8 +52,11 @@ function readDemoData(): AppData {
     assessmentMaterials: parsed.assessmentMaterials ?? [],
     reviewEvents: parsed.reviewEvents ?? [],
     reviewDayPlans: parsed.reviewDayPlans ?? [],
+    reviewQueueItems: parsed.reviewQueueItems ?? [],
+    topicPrerequisites: parsed.topicPrerequisites ?? [],
     materials: parsed.materials ?? [],
     materialFolders: parsed.materialFolders ?? [],
+    subjectClassProgress: parsed.subjectClassProgress ?? [],
   };
   writeDemoData(data);
   return data;
@@ -82,8 +88,11 @@ export async function loadAppData(): Promise<AppData> {
     assessmentMaterials,
     reviewEvents,
     reviewDayPlans,
+    reviewQueueItems,
+    topicPrerequisites,
     materials,
     materialFolders,
+    subjectClassProgress,
   ] = await Promise.all([
     supabase.from("subjects").select("*").order("sort_order", { nullsFirst: false }).order("created_at"),
     supabase.from("demands").select("*").order("due_date", { nullsFirst: false }).order("created_at"),
@@ -94,10 +103,13 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("assessment_materials").select("*").order("created_at"),
-    supabase.from("review_events").select("*").order("created_at", { ascending: false }).limit(240),
+    supabase.from("review_events").select("*").order("created_at", { ascending: false }).limit(1000),
     supabase.from("review_day_plans").select("*").order("plan_date"),
+    supabase.from("review_queue_items").select("*").order("queue_date").order("sort_order"),
+    supabase.from("topic_prerequisites").select("*").order("created_at"),
     supabase.from("materials").select("*").order("created_at", { ascending: false }),
     supabase.from("material_folders").select("*").order("parent_folder_id", { nullsFirst: true }).order("sort_order", { nullsFirst: true }).order("name"),
+    supabase.from("subject_class_progress").select("*").order("updated_at", { ascending: false }),
   ]);
 
   for (const result of [subjects, demands, topics, assessments, assessmentTopics, materials]) {
@@ -116,8 +128,11 @@ export async function loadAppData(): Promise<AppData> {
     assessmentMaterials: assessmentMaterials.error ? [] : assessmentMaterials.data ?? [],
     reviewEvents: reviewEvents.error ? [] : reviewEvents.data ?? [],
     reviewDayPlans: reviewDayPlans.error ? [] : reviewDayPlans.data ?? [],
+    reviewQueueItems: reviewQueueItems.error ? [] : reviewQueueItems.data ?? [],
+    topicPrerequisites: topicPrerequisites.error ? [] : topicPrerequisites.data ?? [],
     materials: materials.data ?? [],
     materialFolders: materialFolders.error ? [] : materialFolders.data ?? [],
+    subjectClassProgress: subjectClassProgress.error ? [] : subjectClassProgress.data ?? [],
   } as AppData;
 }
 
@@ -501,6 +516,83 @@ export async function saveAssessment(assessment: Assessment, topicIds?: string[]
   return data as Assessment;
 }
 
+export async function addAssessmentTopics(assessmentId: string, topicIds: string[]) {
+  if (!topicIds.length) return;
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const existing = new Set(
+      data.assessmentTopics
+        .filter((item) => item.assessment_id === assessmentId)
+        .map((item) => item.topic_id),
+    );
+    data.assessmentTopics = [
+      ...data.assessmentTopics,
+      ...topicIds.filter((topicId) => !existing.has(topicId)).map((topic_id) => ({
+        assessment_id: assessmentId,
+        topic_id,
+      })),
+    ];
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const rows: AssessmentTopic[] = topicIds.map((topic_id) => ({
+    assessment_id: assessmentId,
+    topic_id,
+    user_id: user_id ?? undefined,
+  }));
+  const { error } = await supabase
+    .from("assessment_topics")
+    .upsert(rows, { onConflict: "assessment_id,topic_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+export async function replaceTopicPrerequisites(topicId: string, prerequisiteIds: string[]) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    data.topicPrerequisites = [
+      ...data.topicPrerequisites.filter((item) => item.topic_id !== topicId),
+      ...prerequisiteIds.map((prerequisite_topic_id) => ({
+        topic_id: topicId,
+        prerequisite_topic_id,
+      })),
+    ];
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const currentResult = await supabase
+    .from("topic_prerequisites")
+    .select("prerequisite_topic_id")
+    .eq("topic_id", topicId);
+  if (currentResult.error) throw currentResult.error;
+
+  const requested = new Set(prerequisiteIds);
+  const current = new Set((currentResult.data ?? []).map((item) => item.prerequisite_topic_id));
+  const added = prerequisiteIds.filter((id) => !current.has(id));
+  const removed = [...current].filter((id) => !requested.has(id));
+
+  if (added.length) {
+    const rows: TopicPrerequisite[] = added.map((prerequisite_topic_id) => ({
+      topic_id: topicId,
+      prerequisite_topic_id,
+      user_id: user_id ?? undefined,
+    }));
+    const result = await supabase.from("topic_prerequisites").insert(rows);
+    if (result.error) throw result.error;
+  }
+  if (removed.length) {
+    const result = await supabase
+      .from("topic_prerequisites")
+      .delete()
+      .eq("topic_id", topicId)
+      .in("prerequisite_topic_id", removed);
+    if (result.error) throw result.error;
+  }
+}
+
 export async function saveAssessmentMaterialProgress(item: AssessmentMaterial) {
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
@@ -563,6 +655,49 @@ export async function saveReviewDayPlan(plan: ReviewDayPlan) {
     .single();
   if (error) throw error;
   return data as ReviewDayPlan;
+}
+
+export async function saveReviewQueueItem(item: ReviewQueueItem) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const index = data.reviewQueueItems.findIndex((current) => (
+      current.queue_date === item.queue_date && current.target_key === item.target_key
+    ));
+    if (index >= 0) data.reviewQueueItems[index] = item;
+    else data.reviewQueueItems.push(item);
+    writeDemoData(data);
+    return item;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("review_queue_items")
+    .upsert({ ...item, user_id }, { onConflict: "user_id,queue_date,target_key" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ReviewQueueItem;
+}
+
+export async function saveSubjectClassProgress(progress: SubjectClassProgress) {
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const exists = data.subjectClassProgress.some((item) => item.subject_id === progress.subject_id);
+    data.subjectClassProgress = exists
+      ? data.subjectClassProgress.map((item) => item.subject_id === progress.subject_id ? progress : item)
+      : [...data.subjectClassProgress, progress];
+    writeDemoData(data);
+    return progress;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("subject_class_progress")
+    .upsert({ ...progress, user_id }, { onConflict: "subject_id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as SubjectClassProgress;
 }
 
 export async function saveGradeComponent(component: GradeComponent) {

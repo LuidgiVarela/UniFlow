@@ -27,7 +27,29 @@ Crie um arquivo `.env.local` baseado em `.env.example`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+OPENAI_API_KEY=...
+OPENAI_TOPIC_MODEL=gpt-5-mini
 ```
+
+`OPENAI_API_KEY` e opcional. Quando configurada apenas no servidor, ela habilita o
+rascunho de topicos a partir dos PDFs selecionados na aba Preparacao. O recurso
+sempre mostra o resultado para revisao antes de criar qualquer topico.
+
+## Plugin para ChatGPT e Codex
+
+O UniFlow expoe um servidor MCP somente de leitura em `/mcp`. Ele usa o OAuth 2.1
+do proprio Supabase, portanto cada consulta continua limitada ao usuario pelas
+policies RLS existentes.
+
+1. No Supabase, habilite `Authentication > OAuth Server`.
+2. Defina o Authorization Path como `/oauth/consent` e habilite Dynamic Client Registration.
+3. Use uma chave JWT assimetrica (RS256 ou ES256), necessaria para o escopo `openid`.
+4. Publique o UniFlow em HTTPS.
+5. No modo de desenvolvedor do ChatGPT, conecte `https://seu-dominio/mcp`.
+
+As ferramentas do plugin consultam a visao academica, o ranking de revisoes, a
+fila diaria e o contexto de uma materia. Esta primeira versao nao expoe nenhuma
+operacao de escrita.
 
 ## Supabase
 
@@ -36,12 +58,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 3. No SQL Editor, execute `supabase/schema.sql`.
 4. Em Authentication, habilite email/senha.
 
-Se voce ja executou o schema antigo do MVP, rode tambem:
+Se voce ja executou o schema antigo do MVP, rode em ordem todas as migrations que
+ainda nao foram aplicadas. Os recursos de preparacao e revisao desta versao exigem,
+no minimo, estas migrations mais recentes:
 
 ```text
-supabase/migrations/20260820_academic_structure.sql
-supabase/migrations/20260820_order_tasks_materials.sql
-supabase/migrations/20260820_task_progress.sql
+supabase/migrations/20260912_topic_study_progress.sql
+supabase/migrations/20260913_assessment_materials.sql
+supabase/migrations/20260913_review_planner.sql
+supabase/migrations/20260914_review_workspace.sql
 ```
 
 A migration `20260820_order_tasks_materials.sql` tambem cria o bucket privado `subject-materials` no Supabase Storage e as policies para arquivos por usuario.

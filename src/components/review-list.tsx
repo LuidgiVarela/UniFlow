@@ -1,6 +1,17 @@
 "use client";
 
-import { BookOpenCheck, CalendarClock, Check, ExternalLink, FileText, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BookOpenCheck,
+  CalendarClock,
+  Check,
+  ExternalLink,
+  FileText,
+  ListMinus,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useState, type CSSProperties } from "react";
 import {
@@ -16,9 +27,11 @@ type ReviewListProps = {
   savingKey: string | null;
   onComplete: (entry: ReviewEntry) => Promise<void>;
   onPostpone: (entry: ReviewEntry, date: string) => Promise<void>;
+  onRemove?: (entry: ReviewEntry) => Promise<void>;
+  onMove?: (entry: ReviewEntry, direction: -1 | 1) => Promise<void>;
 };
 
-export function ReviewList({ entries, savingKey, onComplete, onPostpone }: ReviewListProps) {
+export function ReviewList({ entries, savingKey, onComplete, onPostpone, onRemove, onMove }: ReviewListProps) {
   const [reschedulingKey, setReschedulingKey] = useState<string | null>(null);
   const [customDate, setCustomDate] = useState(() => localIsoDate(1));
 
@@ -58,12 +71,42 @@ export function ReviewList({ entries, savingKey, onComplete, onPostpone }: Revie
                 {entry.kind === "topic" ? "Conteúdo" : "Material"}
                 {entry.assessment ? ` · ${entry.assessment.name}` : ""}
               </span>
+              {entry.unmetPrerequisites.length ? (
+                <span className="review-prerequisite-warning">
+                  <TriangleAlert aria-hidden="true" size={13} />
+                  Antes: {entry.unmetPrerequisites.map((topic) => topic.title).join(", ")}
+                </span>
+              ) : null}
             </div>
             <div className="review-entry-timing">
               <strong>{dueReason(entry)}</strong>
               <span>{lastReviewText(entry.lastReviewedAt)}</span>
             </div>
             <div className="review-entry-actions">
+              {onMove ? (
+                <div className="review-order-actions">
+                  <button
+                    aria-label="Mover revisão para cima"
+                    className="icon-button"
+                    disabled={isSaving || index === 0}
+                    onClick={() => void onMove(entry, -1)}
+                    title="Mover para cima"
+                    type="button"
+                  >
+                    <ArrowUp aria-hidden="true" size={15} />
+                  </button>
+                  <button
+                    aria-label="Mover revisão para baixo"
+                    className="icon-button"
+                    disabled={isSaving || index === entries.length - 1}
+                    onClick={() => void onMove(entry, 1)}
+                    title="Mover para baixo"
+                    type="button"
+                  >
+                    <ArrowDown aria-hidden="true" size={15} />
+                  </button>
+                </div>
+              ) : null}
               <button
                 className={`primary-button small${isSaving ? " is-loading" : ""}`}
                 disabled={isSaving}
@@ -86,6 +129,18 @@ export function ReviewList({ entries, savingKey, onComplete, onPostpone }: Revie
                 <CalendarClock aria-hidden="true" size={16} />
                 Não consegui
               </button>
+              {onRemove ? (
+                <button
+                  aria-label="Tirar da fila de hoje"
+                  className="icon-button"
+                  disabled={isSaving}
+                  onClick={() => void onRemove(entry)}
+                  title="Tirar da fila de hoje"
+                  type="button"
+                >
+                  <ListMinus aria-hidden="true" size={16} />
+                </button>
+              ) : null}
             </div>
 
             {isRescheduling ? (

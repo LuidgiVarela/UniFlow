@@ -1,41 +1,43 @@
 "use client";
 
 import {
-  ArrowRight,
+  BarChart3,
   BookOpenCheck,
   CalendarClock,
   CalendarDays,
   Check,
-  ChevronRight,
+  Flame,
   History,
   ListChecks,
-  RefreshCw,
+  Search,
+  Sparkles,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import { useMemo, useState, type CSSProperties } from "react";
 import { useAppData } from "@/components/data-provider";
 import { ReviewList } from "@/components/review-list";
+import { ReviewPriorityList } from "@/components/review-priority-list";
 import { Panel } from "@/components/ui";
 import { daysUntil, formatDate } from "@/lib/date";
 import {
+  buildReviewActivity,
   buildReviewEntries,
   buildReviewWeekLoad,
-  buildSmartReschedulePlan,
+  capacityForDate,
   completedReviewsOn,
-  dueReviewEntries,
-  futureReviewEntries,
+  completedReviewsThisWeek,
+  currentReviewStreak,
   learnedCapacityForDate,
   localIsoDate,
   nextDateAfterReview,
   nextMasteryAfterReview,
   reviewEventFor,
-  reviewHref,
+  reviewQueueItemFor,
+  sortReviewEntries,
   storedMastery,
   type ReviewEntry,
-  type ReviewScheduleChange,
 } from "@/lib/reviews";
-import type { AssessmentMaterial, ReviewAction, ReviewEvent } from "@/types/domain";
+import type { AssessmentMaterial, ReviewAction, ReviewEvent, ReviewQueueState } from "@/types/domain";
 
 const availabilityOptions = [
   { value: 0, label: "Sem tempo" },
@@ -80,15 +82,26 @@ export function ReviewCenter() {
     materials,
     reviewDayPlans,
     reviewEvents,
+    reviewQueueItems,
     subjects,
+    topicPrerequisites,
     topics,
     upsertAssessmentMaterialProgress,
     upsertReviewDayPlan,
+    upsertReviewQueueItem,
     upsertTopic,
   } = appData;
   const entries = useMemo(
-    () => buildReviewEntries({ assessmentMaterials, assessmentTopics, assessments, materials, subjects, topics }),
-    [assessmentMaterials, assessmentTopics, assessments, materials, subjects, topics],
+    () => buildReviewEntries({
+      assessmentMaterials,
+      assessmentTopics,
+      assessments,
+      materials,
+      subjects,
+      topicPrerequisites,
+      topics,
+    }),
+    [assessmentMaterials, assessmentTopics, assessments, materials, subjects, topicPrerequisites, topics],
   );
   const today = localIsoDate();
   const savedTodayPlan = reviewDayPlans.find((plan) => plan.plan_date === today);
@@ -97,23 +110,49 @@ export function ReviewCenter() {
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const [savingPlanDate, setSavingPlanDate] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [fillingQueue, setFillingQueue] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [planPreview, setPlanPreview] = useState<ReviewScheduleChange[] | null>(null);
-  const [applyingPlan, setApplyingPlan] = useState(false);
-  const dueEntries = dueReviewEntries(entries);
-  const futureEntries = futureReviewEntries(entries);
-  const overdueCount = dueEntries.filter((entry) => entry.nextReviewDate && daysUntil(entry.nextReviewDate) < 0).length;
+  const [search, setSearch] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("all");
+
+  const entryByKey = new Map(entries.map((entry) => [entry.key, entry]));
+  const todayQueueItems = reviewQueueItems.filter((item) => item.queue_date === today);
+  const queueItemByKey = new Map(todayQueueItems.map((item) => [item.target_key, item]));
+  const plannedItems = todayQueueItems
+    .filter((item) => item.state === "planned")
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const queueEntries = plannedItems
+    .map((item) => entryByKey.get(item.target_key))
+    .filter((entry): entry is ReviewEntry => Boolean(entry));
+  const hiddenKeys = new Set(
+    todayQueueItems
+      .filter((item) => item.state === "planned" || item.state === "completed" || item.state === "dismissed")
+      .map((item) => item.target_key),
+  );
+  const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
+  const priorityEntries = sortReviewEntries(entries)
+    .filter((entry) => !hiddenKeys.has(entry.key))
+    .filter((entry) => subjectFilter === "all" || entry.subject.id === subjectFilter)
+    .filter((entry) => !normalizedSearch
+      || entry.title.toLocaleLowerCase("pt-BR").includes(normalizedSearch)
+      || entry.subject.code.toLocaleLowerCase("pt-BR").includes(normalizedSearch))
+    .slice(0, 40);
+  const overdueCount = entries.filter((entry) => entry.nextReviewDate && daysUntil(entry.nextReviewDate) < 0).length;
   const completedToday = completedReviewsOn(today, reviewEvents);
-  const nextSevenDays = futureEntries.filter((entry) => entry.nextReviewDate && daysUntil(entry.nextReviewDate) <= 7).length;
-  const weekLoad = buildReviewWeekLoad(entries, reviewEvents, reviewDayPlans, todayCapacity);
+  const weekLoad = buildReviewWeekLoad(reviewEvents, reviewDayPlans, todayCapacity, reviewQueueItems);
   const recentEvents = [...reviewEvents]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 7);
-  const upcomingGroups = futureEntries.slice(0, 24).reduce<Map<string, ReviewEntry[]>>((groups, entry) => {
-    const date = entry.nextReviewDate!;
-    groups.set(date, [...(groups.get(date) ?? []), entry]);
-    return groups;
-  }, new Map());
+  const activity = buildReviewActivity(reviewEvents);
+  const streak = currentReviewStreak(reviewEvents);
+  const completedThisWeek = completedReviewsThisWeek(reviewEvents);
+  const mondayOffset = (new Date().getDay() + 6) % 7;
+  const weeklyTarget = Array.from({ length: 7 }, (_, index) => {
+    const date = localIsoDate(index - mondayOffset);
+    return date === today ? todayCapacity : capacityForDate(date, reviewDayPlans, reviewEvents);
+  }).reduce((total, capacity) => total + capacity, 0);
+  const queueTotal = queueEntries.length + completedToday;
+  const overTarget = Math.max(0, queueTotal - todayCapacity);
 
   async function persistProgress(
     entry: ReviewEntry,
@@ -137,6 +176,110 @@ export function ReviewCenter() {
     }
   }
 
+  async function setQueueState(entry: ReviewEntry, state: ReviewQueueState, sortOrder?: number) {
+    const current = queueItemByKey.get(entry.key);
+    await upsertReviewQueueItem(reviewQueueItemFor(
+      entry,
+      today,
+      state,
+      sortOrder ?? current?.sort_order ?? plannedItems.length + 1,
+      current,
+    ));
+  }
+
+  async function addToQueue(entry: ReviewEntry) {
+    setFeedback(null);
+    setSavingKey(entry.key);
+    try {
+      await setQueueState(entry, "planned", plannedItems.length + 1);
+      setFeedback({
+        tone: entry.unmetPrerequisites.length ? "warning" : "success",
+        message: entry.unmetPrerequisites.length
+          ? `“${entry.title}” entrou na fila. Ele depende de ${entry.unmetPrerequisites.map((topic) => topic.title).join(", ")}.`
+          : `“${entry.title}” entrou na sua fila de hoje.`,
+      });
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível atualizar a fila." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function dismissForToday(entry: ReviewEntry) {
+    setFeedback(null);
+    setSavingKey(entry.key);
+    try {
+      await setQueueState(entry, "dismissed");
+      setFeedback({ tone: "success", message: `“${entry.title}” não será sugerido novamente hoje.` });
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível ocultar esta sugestão." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function removeFromQueue(entry: ReviewEntry) {
+    setFeedback(null);
+    setSavingKey(entry.key);
+    try {
+      await setQueueState(entry, "available");
+      setFeedback({ tone: "success", message: `“${entry.title}” saiu da fila e voltou às prioridades.` });
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível atualizar a fila." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function moveQueueEntry(entry: ReviewEntry, direction: -1 | 1) {
+    const index = queueEntries.findIndex((item) => item.key === entry.key);
+    const swapEntry = queueEntries[index + direction];
+    if (!swapEntry) return;
+    const current = queueItemByKey.get(entry.key);
+    const swap = queueItemByKey.get(swapEntry.key);
+    if (!current || !swap) return;
+    setSavingKey(entry.key);
+    setFeedback(null);
+    try {
+      await Promise.all([
+        upsertReviewQueueItem({ ...current, sort_order: swap.sort_order, updated_at: new Date().toISOString() }),
+        upsertReviewQueueItem({ ...swap, sort_order: current.sort_order, updated_at: new Date().toISOString() }),
+      ]);
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível reordenar a fila." });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function fillDailyTarget() {
+    const remaining = Math.max(0, todayCapacity - queueTotal);
+    if (!remaining) {
+      setFeedback({
+        tone: "success",
+        message: todayCapacity === 0 ? "Hoje está marcado como um dia sem revisões." : "Sua meta de hoje já está preenchida.",
+      });
+      return;
+    }
+    const candidates = priorityEntries.slice(0, remaining);
+    if (!candidates.length) {
+      setFeedback({ tone: "success", message: "Não há outras prioridades disponíveis para preencher a meta." });
+      return;
+    }
+    setFillingQueue(true);
+    setFeedback(null);
+    try {
+      for (const [index, entry] of candidates.entries()) {
+        await setQueueState(entry, "planned", plannedItems.length + index + 1);
+      }
+      setFeedback({ tone: "success", message: `${candidates.length} ${candidates.length === 1 ? "prioridade adicionada" : "prioridades adicionadas"} à fila.` });
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível preencher a fila." });
+    } finally {
+      setFillingQueue(false);
+    }
+  }
+
   async function completeReview(entry: ReviewEntry) {
     const mastery = nextMasteryAfterReview(entry);
     const nextReviewDate = nextDateAfterReview(entry);
@@ -150,17 +293,20 @@ export function ReviewCenter() {
         next_review_date: nextReviewDate,
       });
       const historySaved = await appendHistory(reviewEventFor(entry, "completed", nextReviewDate, mastery, now));
+      let queueSaved = true;
+      try {
+        await setQueueState(entry, "completed");
+      } catch {
+        queueSaved = false;
+      }
       setFeedback({
-        tone: historySaved ? "success" : "warning",
-        message: historySaved
+        tone: historySaved && queueSaved ? "success" : "warning",
+        message: historySaved && queueSaved
           ? `Revisão de “${entry.title}” concluída. Próxima em ${formatDate(nextReviewDate)}.`
-          : `Revisão concluída, mas o histórico não pôde ser registrado.`,
+          : "A revisão foi concluída, mas parte do histórico visual não pôde ser registrada.",
       });
     } catch (error) {
-      setFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : "Não foi possível salvar esta revisão.",
-      });
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível salvar esta revisão." });
     } finally {
       setSavingKey(null);
     }
@@ -178,19 +324,15 @@ export function ReviewCenter() {
         next_review_date: nextReviewDate,
       });
       const historySaved = await appendHistory(reviewEventFor(entry, "postponed", nextReviewDate, mastery, now));
+      await setQueueState(entry, "dismissed");
       setFeedback({
         tone: historySaved ? "success" : "warning",
         message: historySaved
-          ? nextReviewDate === today
-            ? `Revisão de “${entry.title}” adicionada à fila de hoje.`
-            : `Revisão de “${entry.title}” remarcada para ${formatDate(nextReviewDate)}.`
-          : `Revisão remarcada, mas o histórico não pôde ser registrado.`,
+          ? `Revisão de “${entry.title}” remarcada para ${formatDate(nextReviewDate)}.`
+          : "A revisão foi remarcada, mas o histórico não pôde ser registrado.",
       });
     } catch (error) {
-      setFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : "Não foi possível remarcar esta revisão.",
-      });
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível remarcar esta revisão." });
     } finally {
       setSavingKey(null);
     }
@@ -218,90 +360,30 @@ export function ReviewCenter() {
       });
     } catch (error) {
       if (date === today) setTodayCapacity(previous);
-      setFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : "Não foi possível salvar sua disponibilidade.",
-      });
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : "Não foi possível salvar sua disponibilidade." });
     } finally {
       setSavingPlanDate(null);
     }
   }
 
-  function previewSmartPlan() {
-    const changes = buildSmartReschedulePlan({
-      entries,
-      events: reviewEvents,
-      dayPlans: reviewDayPlans,
-      todayCapacity,
-    });
-    if (!changes.length) {
-      setFeedback({
-        tone: "success",
-        message: "A fila atual já cabe na disponibilidade de hoje.",
-      });
-      return;
-    }
-    setFeedback(null);
-    setPlanPreview(changes);
-  }
-
-  async function applySmartPlan() {
-    if (!planPreview?.length) return;
-    setApplyingPlan(true);
-    setFeedback(null);
-    let applied = 0;
-    let historyFailures = 0;
-    let updateFailures = 0;
-
-    for (const change of planPreview) {
-      const mastery = storedMastery(change.entry);
-      const now = new Date();
-      try {
-        await persistProgress(change.entry, {
-          mastery_level: mastery,
-          last_reviewed_at: change.entry.lastReviewedAt,
-          next_review_date: change.toDate,
-        });
-        applied += 1;
-        const saved = await appendHistory(reviewEventFor(change.entry, "auto_rescheduled", change.toDate, mastery, now));
-        if (!saved) historyFailures += 1;
-      } catch {
-        updateFailures += 1;
-      }
-    }
-
-    setApplyingPlan(false);
-    setPlanPreview(null);
-    if (updateFailures) {
-      setFeedback({
-        tone: "error",
-        message: `${applied} ${applied === 1 ? "revisão foi reorganizada" : "revisões foram reorganizadas"}; ${updateFailures} não puderam ser atualizadas.`,
-      });
-      return;
-    }
-    setFeedback({
-      tone: historyFailures ? "warning" : "success",
-      message: historyFailures
-        ? `${applied} revisões reorganizadas; parte do histórico não pôde ser registrada.`
-        : `${applied} ${applied === 1 ? "revisão reorganizada" : "revisões reorganizadas"} com sucesso.`,
-    });
-  }
-
   return (
     <>
       <section className="review-center-summary" aria-label="Resumo das revisões">
-        <div><span>Na fila hoje</span><strong>{dueEntries.length}</strong></div>
-        <div><span>Atrasadas</span><strong>{overdueCount}</strong></div>
+        <div><span>Minha fila hoje</span><strong>{queueEntries.length}</strong></div>
+        <div><span>Prioridades atrasadas</span><strong>{overdueCount}</strong></div>
         <div><span>Concluídas hoje</span><strong>{completedToday}</strong></div>
-        <div><span>Próximos 7 dias</span><strong>{nextSevenDays}</strong></div>
+        <div><span>Meta da semana</span><strong>{completedThisWeek}/{weeklyTarget}</strong></div>
       </section>
 
       <section className="review-planner-toolbar">
         <div className="review-availability-heading">
           <CalendarClock aria-hidden="true" size={19} />
           <div>
-            <h2>Disponibilidade de hoje</h2>
-            <span>{completedToday} concluídas · {Math.max(0, todayCapacity - completedToday)} vagas restantes</span>
+            <h2>Ritmo de hoje</h2>
+            <span>
+              Meta flexível de {todayCapacity} {todayCapacity === 1 ? "revisão" : "revisões"}
+              {overTarget ? ` · ${overTarget} além da meta` : ` · ${Math.max(0, todayCapacity - queueTotal)} vagas sugeridas`}
+            </span>
           </div>
         </div>
         <div aria-label="Disponibilidade para revisões hoje" className="review-availability-options" role="group">
@@ -325,13 +407,13 @@ export function ReviewCenter() {
             Planejar semana
           </button>
           <button
-            className="primary-button review-plan-button"
-            disabled={Boolean(savingPlanDate) || applyingPlan || !dueEntries.length}
-            onClick={previewSmartPlan}
+            className={`primary-button review-plan-button${fillingQueue ? " is-loading" : ""}`}
+            disabled={fillingQueue || Boolean(savingPlanDate)}
+            onClick={() => void fillDailyTarget()}
             type="button"
           >
-            <RefreshCw aria-hidden="true" size={16} />
-            Replanejar dia
+            {!fillingQueue ? <Sparkles aria-hidden="true" size={16} /> : null}
+            {fillingQueue ? "Preenchendo" : "Preencher meta"}
           </button>
         </div>
       </section>
@@ -339,20 +421,65 @@ export function ReviewCenter() {
       {feedback ? <p className={`review-center-feedback ${feedback.tone}`} role="status">{feedback.message}</p> : null}
 
       <div className="review-center-grid">
-        <Panel className="plain-section review-today-panel">
-          <header className="review-section-header">
-            <div>
-              <div className="review-section-title"><ListChecks aria-hidden="true" size={18} /><h2>Fila de hoje</h2></div>
-              <span>Ordenada por atraso, tempo sem revisão e avaliação mais próxima</span>
-            </div>
-            <strong>{dueEntries.length}</strong>
-          </header>
-          {dueEntries.length ? (
-            <ReviewList entries={dueEntries} onComplete={completeReview} onPostpone={rescheduleReview} savingKey={savingKey} />
-          ) : (
-            <div className="review-center-empty"><Check aria-hidden="true" size={19} /><strong>Fila concluída por hoje.</strong></div>
-          )}
-        </Panel>
+        <div className="review-center-main">
+          <Panel className="plain-section review-today-panel">
+            <header className="review-section-header">
+              <div>
+                <div className="review-section-title"><ListChecks aria-hidden="true" size={18} /><h2>Minha fila de hoje</h2></div>
+                <span>Você escolhe o que entra; a meta não limita quantos itens pode concluir</span>
+              </div>
+              <strong>{queueEntries.length}</strong>
+            </header>
+            {queueEntries.length ? (
+              <ReviewList
+                entries={queueEntries}
+                onComplete={completeReview}
+                onMove={moveQueueEntry}
+                onPostpone={rescheduleReview}
+                onRemove={removeFromQueue}
+                savingKey={savingKey}
+              />
+            ) : (
+              <div className="review-center-empty">
+                <BookOpenCheck aria-hidden="true" size={19} />
+                <div><strong>Sua fila ainda está vazia.</strong><span>Escolha prioridades abaixo ou preencha até a meta.</span></div>
+              </div>
+            )}
+          </Panel>
+
+          <Panel className="plain-section review-priorities-panel">
+            <header className="review-section-header review-priorities-header">
+              <div>
+                <div className="review-section-title"><BarChart3 aria-hidden="true" size={18} /><h2>Prioridades</h2></div>
+                <span>Ranking por atraso, domínio, tempo sem revisão, avaliação e pré-requisitos</span>
+              </div>
+              <div className="review-priority-filters">
+                <label className="review-priority-search">
+                  <Search aria-hidden="true" size={15} />
+                  <span className="visually-hidden">Buscar prioridade</span>
+                  <input onChange={(event) => setSearch(event.target.value)} placeholder="Buscar" value={search} />
+                </label>
+                <label>
+                  <span className="visually-hidden">Filtrar por matéria</span>
+                  <select onChange={(event) => setSubjectFilter(event.target.value)} value={subjectFilter}>
+                    <option value="all">Todas as matérias</option>
+                    {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code}</option>)}
+                  </select>
+                </label>
+              </div>
+            </header>
+            {priorityEntries.length ? (
+              <ReviewPriorityList
+                entries={priorityEntries}
+                onAdd={addToQueue}
+                onDismiss={dismissForToday}
+                savingKey={savingKey}
+              />
+            ) : (
+              <div className="review-center-empty"><Check aria-hidden="true" size={19} /><strong>Nenhuma prioridade com estes filtros.</strong></div>
+            )}
+          </Panel>
+        </div>
 
         <div className="review-center-side">
           <Panel className="plain-section review-week-panel">
@@ -397,53 +524,30 @@ export function ReviewCenter() {
         </div>
       </div>
 
-      <Panel className="plain-section review-upcoming-panel">
+      <Panel className="plain-section review-activity-panel">
         <header className="review-section-header">
           <div>
-            <div className="review-section-title"><BookOpenCheck aria-hidden="true" size={18} /><h2>Próximas revisões</h2></div>
-            <span>Agenda posterior a hoje</span>
+            <div className="review-section-title"><Flame aria-hidden="true" size={18} /><h2>Ritmo de revisão</h2></div>
+            <span>Consistência sem punição: cada quadrado representa um dia</span>
           </div>
-          <strong>{futureEntries.length}</strong>
+          <div className="review-activity-stats">
+            <span><strong>{completedThisWeek}</strong> esta semana</span>
+            <span><strong>{streak}</strong> {streak === 1 ? "dia seguido" : "dias seguidos"}</span>
+          </div>
         </header>
-        {upcomingGroups.size ? (
-          <div className="review-upcoming-groups">
-            {[...upcomingGroups].map(([date, dateEntries]) => (
-              <section className="review-upcoming-day" key={date}>
-                <header><time>{formatDate(date)}</time><span>{dateEntries.length} {dateEntries.length === 1 ? "item" : "itens"}</span></header>
-                <div>
-                  {dateEntries.map((entry) => {
-                    const isMoving = savingKey === entry.key;
-                    return (
-                      <article className="review-upcoming-item" key={entry.key}>
-                        <Link
-                          href={reviewHref(entry)}
-                          rel={entry.kind === "material" ? "noreferrer" : undefined}
-                          style={{ "--review-color": entry.subject.color } as CSSProperties}
-                          target={entry.kind === "material" ? "_blank" : undefined}
-                        >
-                          <span>{entry.subject.code}</span>
-                          <strong>{entry.title}</strong>
-                          <small>{entry.kind === "topic" ? "Conteúdo" : "Material"}</small>
-                          <ChevronRight aria-hidden="true" size={15} />
-                        </Link>
-                        <button
-                          className={`ghost-action tiny ${isMoving ? "is-loading" : ""}`}
-                          disabled={isMoving}
-                          onClick={() => void rescheduleReview(entry, today)}
-                          title="Adicionar à fila de hoje"
-                          type="button"
-                        >
-                          {isMoving ? null : <CalendarClock aria-hidden="true" size={15} />}
-                          {isMoving ? "Movendo" : "Trazer para hoje"}
-                        </button>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
+        <div className="review-heatmap-wrap">
+          <div aria-label="Atividade de revisões dos últimos meses" className="review-heatmap" role="img">
+            {activity.map((day) => (
+              <span
+                aria-label={`${formatDate(day.date)}: ${day.count} ${day.count === 1 ? "revisão" : "revisões"}`}
+                data-level={day.level}
+                key={day.date}
+                title={`${formatDate(day.date)} · ${day.count} ${day.count === 1 ? "revisão" : "revisões"}`}
+              />
             ))}
           </div>
-        ) : <div className="review-center-empty"><CalendarDays aria-hidden="true" size={19} /><strong>Nenhuma revisão futura agendada.</strong></div>}
+          <div className="review-heatmap-legend"><span>Menos</span>{[0, 1, 2, 3, 4].map((level) => <i data-level={level} key={level} />)}<span>Mais</span></div>
+        </div>
       </Panel>
 
       {availabilityOpen ? (
@@ -452,7 +556,7 @@ export function ReviewCenter() {
             <header className="modal-header">
               <div>
                 <h2 id="review-availability-title">Disponibilidade da semana</h2>
-                <p>Quantidade de revisões que cabe em cada dia</p>
+                <p>Use como meta flexível; você sempre pode fazer mais ou menos</p>
               </div>
               <button aria-label="Fechar" className="icon-button" disabled={Boolean(savingPlanDate)} onClick={() => setAvailabilityOpen(false)} type="button"><X size={17} /></button>
             </header>
@@ -464,7 +568,7 @@ export function ReviewCenter() {
                   <article aria-busy={isSaving} key={day.date}>
                     <div>
                       <strong>{day.label}</strong>
-                      <span>{day.shortDate} · {day.scheduled} {day.scheduled === 1 ? "agendada" : "agendadas"}</span>
+                      <span>{day.shortDate} · {day.scheduled} na fila</span>
                     </div>
                     <div aria-label={`Disponibilidade de ${day.label}`} className="review-day-capacity-options" role="group">
                       {availabilityOptions.map((option) => (
@@ -488,38 +592,6 @@ export function ReviewCenter() {
             </div>
             <footer className="review-plan-footer">
               <button className="primary-button" disabled={Boolean(savingPlanDate)} onClick={() => setAvailabilityOpen(false)} type="button">Concluir</button>
-            </footer>
-          </section>
-        </div>
-      ) : null}
-
-      {planPreview ? (
-        <div className="modal-backdrop">
-          <section aria-labelledby="review-plan-title" className="modal review-plan-modal">
-            <header className="modal-header">
-              <div>
-                <h2 id="review-plan-title">Novo plano de revisão</h2>
-                <p>{planPreview.length} {planPreview.length === 1 ? "revisão será redistribuída" : "revisões serão redistribuídas"}</p>
-              </div>
-              <button aria-label="Fechar" className="icon-button" disabled={applyingPlan} onClick={() => setPlanPreview(null)} type="button"><X size={17} /></button>
-            </header>
-            <div className="review-plan-list">
-              {planPreview.map((change) => (
-                <article key={change.entry.key} style={{ "--review-color": change.entry.subject.color } as CSSProperties}>
-                  <span>{change.entry.subject.code}</span>
-                  <div><strong>{change.entry.title}</strong><small>{change.entry.assessment?.name ?? (change.entry.kind === "topic" ? "Conteúdo" : "Material")}</small></div>
-                  <time>{change.fromDate === today ? "Hoje" : formatDate(change.fromDate)}</time>
-                  <ArrowRight aria-hidden="true" size={15} />
-                  <time>{formatDate(change.toDate)}</time>
-                </article>
-              ))}
-            </div>
-            <footer className="review-plan-footer">
-              <button className="ghost-action" disabled={applyingPlan} onClick={() => setPlanPreview(null)} type="button">Cancelar</button>
-              <button className={`primary-button${applyingPlan ? " is-loading" : ""}`} disabled={applyingPlan} onClick={() => void applySmartPlan()} type="button">
-                {!applyingPlan ? <Check aria-hidden="true" size={16} /> : null}
-                {applyingPlan ? "Aplicando" : "Aplicar novo plano"}
-              </button>
             </footer>
           </section>
         </div>

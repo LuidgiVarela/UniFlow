@@ -8,9 +8,12 @@ import type {
   ReviewAction,
   ReviewDayPlan,
   ReviewEvent,
+  ReviewQueueItem,
+  ReviewQueueState,
   Subject,
   Topic,
   TopicMasteryLevel,
+  TopicPrerequisite,
 } from "@/types/domain";
 
 export const DEFAULT_REVIEW_CAPACITY = 3;
@@ -33,6 +36,20 @@ export type ReviewEntry = {
   topic?: Topic;
   material?: Material;
   assessmentMaterial?: AssessmentMaterial;
+  prerequisites: Topic[];
+  unmetPrerequisites: Topic[];
+};
+
+export type ReviewPriority = {
+  score: number;
+  reasons: string[];
+  blocked: boolean;
+};
+
+export type ReviewActivityDay = {
+  date: string;
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4;
 };
 
 export type ReviewScheduleChange = {
@@ -82,7 +99,7 @@ export function reviewedDaysAgo(value: string | null, reference = new Date()) {
   return Math.max(0, -dateDifference(reference, reviewedDate));
 }
 
-function inferredTopicMastery(topic: Topic): TopicMasteryLevel {
+export function inferredTopicMastery(topic: Topic): TopicMasteryLevel {
   if (topic.mastery_level === 0 || topic.mastery_level === 1 || topic.mastery_level === 2 || topic.mastery_level === 3) {
     return topic.mastery_level;
   }
@@ -118,11 +135,20 @@ export function buildReviewEntries({
   assessmentTopics,
   assessmentMaterials,
   materials,
+  topicPrerequisites = [],
 }: Pick<AppData,
   "subjects" | "topics" | "assessments" | "assessmentTopics" | "assessmentMaterials" | "materials"
->) {
+> & Partial<Pick<AppData, "topicPrerequisites">>) {
   const subjectById = new Map(subjects.map((subject) => [subject.id, subject]));
   const materialById = new Map(materials.map((material) => [material.id, material]));
+  const topicById = new Map(topics.map((topic) => [topic.id, topic]));
+  const prerequisiteIdsByTopic = new Map<string, string[]>();
+  topicPrerequisites.forEach((relation: TopicPrerequisite) => {
+    prerequisiteIdsByTopic.set(relation.topic_id, [
+      ...(prerequisiteIdsByTopic.get(relation.topic_id) ?? []),
+      relation.prerequisite_topic_id,
+    ]);
+  });
   const topicsBySubject = new Map<string, Topic[]>();
   topics.forEach((topic) => {
     const current = topicsBySubject.get(topic.subject_id) ?? [];
@@ -131,7 +157,7 @@ export function buildReviewEntries({
   });
 
   const topicEntries = new Map<string, ReviewEntry>();
-  topics.filter(hasStudyProgress).forEach((topic) => {
+  topics.forEach((topic) => {
     const subject = subjectById.get(topic.subject_id);
     if (!subject) return;
     topicEntries.set(topic.id, {
@@ -145,6 +171,8 @@ export function buildReviewEntries({
       nextReviewDate: topic.next_review_date ?? null,
       orderIndex: topic.order_index,
       topic,
+      prerequisites: [],
+      unmetPrerequisites: [],
     });
   });
 
@@ -183,6 +211,8 @@ export function buildReviewEntries({
         nextReviewDate: topic.next_review_date ?? null,
         orderIndex: topic.order_index,
         topic,
+        prerequisites: [],
+        unmetPrerequisites: [],
       });
     });
   });
@@ -206,10 +236,20 @@ export function buildReviewEntries({
       orderIndex: material.sort_order ?? Number.MAX_SAFE_INTEGER,
       material,
       assessmentMaterial: link,
+      prerequisites: [],
+      unmetPrerequisites: [],
     }];
   });
 
-  return [...topicEntries.values(), ...materialEntries];
+  const entries = [...topicEntries.values(), ...materialEntries];
+  entries.forEach((entry) => {
+    if (!entry.topic) return;
+    entry.prerequisites = (prerequisiteIdsByTopic.get(entry.topic.id) ?? [])
+      .map((id) => topicById.get(id))
+      .filter((topic): topic is Topic => Boolean(topic));
+    entry.unmetPrerequisites = entry.prerequisites.filter((topic) => inferredTopicMastery(topic) < 2);
+  });
+  return entries;
 }
 
 export function isReviewDue(entry: ReviewEntry, reference = new Date()) {
@@ -218,18 +258,10 @@ export function isReviewDue(entry: ReviewEntry, reference = new Date()) {
 
 export function sortReviewEntries(entries: ReviewEntry[], reference = new Date()) {
   return [...entries].sort((a, b) => {
-    const aHasSchedule = Boolean(a.nextReviewDate);
-    const bHasSchedule = Boolean(b.nextReviewDate);
-    if (aHasSchedule !== bHasSchedule) return aHasSchedule ? -1 : 1;
-
-    const aOverdue = a.nextReviewDate ? Math.max(0, -dateDifference(reference, a.nextReviewDate)) : 0;
-    const bOverdue = b.nextReviewDate ? Math.max(0, -dateDifference(reference, b.nextReviewDate)) : 0;
-    if (aOverdue !== bOverdue) return bOverdue - aOverdue;
-
-    const aAge = reviewedDaysAgo(a.lastReviewedAt, reference) ?? Number.MAX_SAFE_INTEGER;
-    const bAge = reviewedDaysAgo(b.lastReviewedAt, reference) ?? Number.MAX_SAFE_INTEGER;
-    if (aAge !== bAge) return bAge - aAge;
-    if (a.mastery !== b.mastery) return a.mastery - b.mastery;
+    const aPriority = reviewPriority(a, reference);
+    const bPriority = reviewPriority(b, reference);
+    if (aPriority.blocked !== bPriority.blocked) return aPriority.blocked ? 1 : -1;
+    if (aPriority.score !== bPriority.score) return bPriority.score - aPriority.score;
 
     const assessmentDifference = assessmentTime(a.assessment) - assessmentTime(b.assessment);
     if (assessmentDifference !== 0) return assessmentDifference;
@@ -237,6 +269,57 @@ export function sortReviewEntries(entries: ReviewEntry[], reference = new Date()
     if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex;
     return a.title.localeCompare(b.title, "pt-BR");
   });
+}
+
+export function reviewPriority(entry: ReviewEntry, reference = new Date()): ReviewPriority {
+  let score = 0;
+  const reasons: string[] = [];
+  const scheduleDifference = entry.nextReviewDate ? dateDifference(reference, entry.nextReviewDate) : null;
+
+  if (scheduleDifference === null) {
+    score += entry.lastReviewedAt ? 22 : 34;
+    reasons.push(entry.lastReviewedAt ? "Sem nova data" : "Nunca revisado");
+  } else if (scheduleDifference < 0) {
+    const overdueDays = Math.abs(scheduleDifference);
+    score += 28 + Math.min(70, overdueDays * 5);
+    reasons.push(`${overdueDays}d em atraso`);
+  } else if (scheduleDifference === 0) {
+    score += 27;
+    reasons.push("Revisão prevista hoje");
+  } else {
+    score += Math.max(0, 13 - scheduleDifference);
+    if (scheduleDifference <= 7) reasons.push(`Previsto em ${scheduleDifference}d`);
+  }
+
+  const masteryScore: Record<TopicMasteryLevel, number> = { 0: 32, 1: 23, 2: 11, 3: 0 };
+  score += masteryScore[entry.mastery];
+  if (entry.mastery === 0) reasons.push("Ainda não estudado");
+  else if (entry.mastery === 1) reasons.push("Domínio frágil");
+
+  const age = reviewedDaysAgo(entry.lastReviewedAt, reference);
+  if (age === null) {
+    score += 18;
+  } else {
+    score += Math.min(28, age * 2);
+    if (age >= 7) reasons.push(`${age}d sem revisar`);
+  }
+
+  if (entry.assessment?.date) {
+    const assessmentDays = dateDifference(reference, entry.assessment.date);
+    if (assessmentDays <= 3) score += 42;
+    else if (assessmentDays <= 7) score += 30;
+    else if (assessmentDays <= 14) score += 18;
+    else if (assessmentDays <= 30) score += 8;
+    if (assessmentDays >= 0 && assessmentDays <= 14) reasons.push(`${entry.assessment.name} em ${assessmentDays}d`);
+  }
+
+  const blocked = entry.unmetPrerequisites.length > 0;
+  if (blocked) {
+    score -= 90 + entry.unmetPrerequisites.length * 10;
+    reasons.push(`Antes: ${entry.unmetPrerequisites.map((topic) => topic.title).join(", ")}`);
+  }
+
+  return { score, reasons: reasons.slice(0, 3), blocked };
 }
 
 export function dueReviewEntries(entries: ReviewEntry[], reference = new Date()) {
@@ -253,6 +336,8 @@ export function dueReason(entry: ReviewEntry, reference = new Date()) {
   if (!entry.nextReviewDate) return entry.lastReviewedAt ? "Sem nova data" : "Ainda não revisado";
   const difference = dateDifference(reference, entry.nextReviewDate);
   if (difference < 0) return `Atrasada há ${Math.abs(difference)}d`;
+  if (difference > 1) return `Agendada em ${difference}d`;
+  if (difference === 1) return "Agendada para amanhã";
   return "Agendada para hoje";
 }
 
@@ -308,6 +393,80 @@ export function reviewEventFor(
 
 export function completedReviewsOn(date: string, events: ReviewEvent[]) {
   return events.filter((event) => event.action === "completed" && isoDateFromTimestamp(event.created_at) === date).length;
+}
+
+export function reviewQueueItemFor(
+  entry: ReviewEntry,
+  queueDate: string,
+  state: ReviewQueueState,
+  sortOrder: number,
+  current?: ReviewQueueItem,
+): ReviewQueueItem {
+  const now = new Date().toISOString();
+  return {
+    id: current?.id ?? crypto.randomUUID(),
+    queue_date: queueDate,
+    target_key: entry.key,
+    target_type: entry.kind,
+    subject_id: entry.subject.id,
+    topic_id: entry.topic?.id ?? null,
+    assessment_id: entry.assessmentMaterial?.assessment_id ?? entry.assessment?.id ?? null,
+    material_id: entry.material?.id ?? null,
+    state,
+    sort_order: sortOrder,
+    created_at: current?.created_at ?? now,
+    updated_at: now,
+  };
+}
+
+export function buildReviewActivity(events: ReviewEvent[], weeks = 18, reference = new Date()): ReviewActivityDay[] {
+  const countByDate = new Map<string, number>();
+  events.forEach((event) => {
+    if (event.action !== "completed") return;
+    const date = isoDateFromTimestamp(event.created_at);
+    if (date) countByDate.set(date, (countByDate.get(date) ?? 0) + 1);
+  });
+
+  const end = normalizedDate(reference);
+  const start = normalizedDate(reference);
+  const mondayOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - mondayOffset - (weeks - 1) * 7);
+  const totalDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const paddedDays = Math.max(weeks * 7, totalDays);
+
+  return Array.from({ length: paddedDays }, (_, index) => {
+    const date = localIsoDate(index, start);
+    const count = countByDate.get(date) ?? 0;
+    const level: ReviewActivityDay["level"] = count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 5 ? 3 : 4;
+    return { date, count, level };
+  });
+}
+
+export function currentReviewStreak(events: ReviewEvent[], reference = new Date()) {
+  const completedDates = new Set(
+    events
+      .filter((event) => event.action === "completed")
+      .map((event) => isoDateFromTimestamp(event.created_at))
+      .filter((date): date is string => Boolean(date)),
+  );
+  let offset = completedDates.has(localIsoDate(0, reference)) ? 0 : -1;
+  let streak = 0;
+  while (completedDates.has(localIsoDate(offset, reference))) {
+    streak += 1;
+    offset -= 1;
+  }
+  return streak;
+}
+
+export function completedReviewsThisWeek(events: ReviewEvent[], reference = new Date()) {
+  const weekday = (reference.getDay() + 6) % 7;
+  const start = localIsoDate(-weekday, reference);
+  const end = localIsoDate(6 - weekday, reference);
+  return events.filter((event) => {
+    if (event.action !== "completed") return false;
+    const date = isoDateFromTimestamp(event.created_at);
+    return Boolean(date && date >= start && date <= end);
+  }).length;
 }
 
 export function learnedCapacityForDate(date: string, events: ReviewEvent[]) {
@@ -406,18 +565,17 @@ export function buildSmartReschedulePlan({
 }
 
 export function buildReviewWeekLoad(
-  entries: ReviewEntry[],
   events: ReviewEvent[],
   dayPlans: ReviewDayPlan[],
   todayCapacity: number,
+  queueItems: ReviewQueueItem[] = [],
   reference = new Date(),
 ): ReviewDayLoad[] {
   return Array.from({ length: 7 }, (_, offset) => {
     const date = localIsoDate(offset, reference);
     const dateObject = new Date(`${date}T12:00:00`);
-    const scheduled = offset === 0
-      ? entries.filter((entry) => isReviewDue(entry, reference)).length
-      : entries.filter((entry) => entry.nextReviewDate === date).length;
+    const manuallyPlanned = queueItems.filter((item) => item.queue_date === date && item.state === "planned").length;
+    const scheduled = manuallyPlanned;
     return {
       date,
       label: offset === 0

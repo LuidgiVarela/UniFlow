@@ -121,6 +121,8 @@ export const mockData: AppData = {
   assessmentMaterials: [],
   reviewEvents: [],
   reviewDayPlans: [],
+  reviewQueueItems: [],
+  topicPrerequisites: [],
   materials: [
     {
       id: "mat-1",
@@ -133,4 +135,5 @@ export const mockData: AppData = {
     },
   ],
   materialFolders: [],
+  subjectClassProgress: [],
 };

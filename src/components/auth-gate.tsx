@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { DataProvider } from "@/components/data-provider";
 import { AppShell } from "@/components/app-shell";
@@ -55,8 +56,10 @@ function AuthScreen() {
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { demoMode, loading, user } = useAuth();
+  const pathname = usePathname();
   if (loading) return <main className="loading-screen">Carregando UniFlow...</main>;
   if (!demoMode && !user) return <AuthScreen />;
+  if (pathname === "/oauth/consent") return <>{children}</>;
   return (
     <DataProvider>
       <AppShell>{children}</AppShell>

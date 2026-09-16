@@ -1,102 +1,114 @@
+<div align="center">
+
 # UniFlow
 
-MVP de um sistema pessoal de organizacao academica para acompanhar o semestre.
+**Seu semestre, materiais e revisões em um único fluxo.**
 
-## Stack
+Uma plataforma de organização acadêmica criada para transformar prazos,
+conteúdos e arquivos espalhados em uma rotina de estudo clara e flexível.
 
-- Next.js App Router + React + TypeScript
-- Supabase Auth e Postgres com Row Level Security
-- CSS global com componentes reutilizaveis leves
-- `lucide-react` para icones
+[**Acessar o UniFlow**](https://uniflow-gamma.vercel.app)
 
-## Como executar
+![Status](https://img.shields.io/badge/status-em%20evolução-36b37e?style=flat-square)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres-3fcf8e?style=flat-square&logo=supabase&logoColor=white)
+![Vercel](https://img.shields.io/badge/deploy-Vercel-000000?style=flat-square&logo=vercel)
 
-```bash
-npm install
-npm run dev
-```
+</div>
 
-Acesse `http://localhost:3000`.
+![Central de revisões do UniFlow](docs/images/uniflow-revisoes.png)
 
-Sem variaveis do Supabase, o app entra em modo demo e usa dados mockados em `localStorage`. Isso existe apenas para desenvolvimento visual. Com Supabase configurado, os dados passam a vir do banco.
+## Sobre o UniFlow
 
-## Variaveis de ambiente
+O UniFlow nasceu de uma necessidade real: acompanhar várias matérias sem depender
+de planilhas, pastas desconectadas e planejamentos rígidos que deixam de funcionar
+quando a rotina aperta.
 
-Crie um arquivo `.env.local` baseado em `.env.example`:
+Em vez de decidir tudo pelo estudante, o sistema reúne o contexto acadêmico,
+organiza prioridades e permite que cada pessoa monte o próprio ritmo do dia.
+O objetivo é reduzir o esforço de organização para sobrar mais atenção para o que
+realmente importa: estudar.
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-OPENAI_API_KEY=...
-OPENAI_TOPIC_MODEL=gpt-5-mini
-```
+## Acesse
 
-`OPENAI_API_KEY` e opcional. Quando configurada apenas no servidor, ela habilita o
-rascunho de topicos a partir dos PDFs selecionados na aba Preparacao. O recurso
-sempre mostra o resultado para revisao antes de criar qualquer topico.
+A versão atual está disponível em:
 
-## Plugin para ChatGPT e Codex
+### [uniflow-gamma.vercel.app](https://uniflow-gamma.vercel.app)
 
-O UniFlow expoe um servidor MCP somente de leitura em `/mcp`. Ele usa o OAuth 2.1
-do proprio Supabase, portanto cada consulta continua limitada ao usuario pelas
-policies RLS existentes.
+Crie sua conta ou entre com uma conta existente. Cada usuário possui seu próprio
+espaço de matérias, arquivos, notas e histórico de estudos.
 
-1. No Supabase, habilite `Authentication > OAuth Server`.
-2. Defina o Authorization Path como `/oauth/consent` e habilite Dynamic Client Registration.
-3. Use uma chave JWT assimetrica (RS256 ou ES256), necessaria para o escopo `openid`.
-4. Publique o UniFlow em HTTPS.
-5. No modo de desenvolvedor do ChatGPT, conecte `https://seu-dominio/mcp`.
+> O UniFlow está em desenvolvimento ativo. A versão publicada já é funcional,
+> mas novos recursos e ajustes de experiência continuam sendo adicionados.
 
-As ferramentas do plugin consultam a visao academica, o ranking de revisoes, a
-fila diaria e o contexto de uma materia. Esta primeira versao nao expoe nenhuma
-operacao de escrita.
+## O que você encontra
 
-## Supabase
+| Área | Recursos |
+| --- | --- |
+| **Visão geral** | Prazos, pendências e avaliações importantes reunidos em um painel. |
+| **Revisões** | Ranking inteligente, fila diária escolhida pelo estudante, metas flexíveis, pré-requisitos e histórico de consistência. |
+| **Matérias** | Conteúdos, tarefas, avaliações, preparação para provas, notas e acompanhamento do semestre. |
+| **Materiais** | Pastas aninhadas, reordenação por arrastar, movimentação de arquivos, download em ZIP e marcador de onde a turma parou. |
+| **PDFs** | Leitura em nova aba e editor para textos, imagens, destaques e desenhos, preservando o original quando desejado. |
+| **Listas** | Progresso por questão e item, dificuldade, observações e suporte para listas que começam na questão zero. |
+| **Faltômetro** | Controle de presença, limite de faltas e projeção do restante do semestre. |
 
-1. Crie um projeto no Supabase.
-2. Copie `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` para `.env.local`.
-3. No SQL Editor, execute `supabase/schema.sql`.
-4. Em Authentication, habilite email/senha.
+## Revisões que se adaptam à rotina
 
-Se voce ja executou o schema antigo do MVP, rode em ordem todas as migrations que
-ainda nao foram aplicadas. Os recursos de preparacao e revisao desta versao exigem,
-no minimo, estas migrations mais recentes:
+O planejamento de revisões foi pensado para dias que nem sempre saem como o
+esperado. O UniFlow oferece uma meta baseada na disponibilidade informada, mas não
+impõe um limite: é possível revisar menos, ultrapassar a meta ou escolher um
+conteúdo previsto para outro dia.
 
-```text
-supabase/migrations/20260912_topic_study_progress.sql
-supabase/migrations/20260913_assessment_materials.sql
-supabase/migrations/20260913_review_planner.sql
-supabase/migrations/20260914_review_workspace.sql
-```
+As prioridades consideram fatores como:
 
-A migration `20260820_order_tasks_materials.sql` tambem cria o bucket privado `subject-materials` no Supabase Storage e as policies para arquivos por usuario.
+- tempo desde a última revisão;
+- nível de domínio do conteúdo;
+- proximidade de avaliações;
+- revisões atrasadas;
+- pré-requisitos ainda não estudados.
 
-## Estrutura
+O histórico em formato de mapa de atividade ajuda a enxergar consistência sem
+transformar o estudo em uma obrigação punitiva.
 
-- `src/app`: rotas do App Router.
-- `src/components`: shell, providers, modais e componentes de UI.
-- `src/lib`: Supabase, repositorio, datas, labels e logica de prioridade.
-- `src/types`: tipos de dominio.
-- `supabase/schema.sql`: modelo inicial do banco e politicas RLS.
-- `supabase/migrations`: mudancas incrementais para bancos ja criados.
+## Materiais sem perder o contexto
 
-## Funcionalidades do MVP
+O gerenciador de materiais segue uma lógica familiar de explorador de arquivos.
+Pastas podem conter outras pastas, e arquivos podem ser reorganizados ou movidos
+com o mouse. Para acompanhar as aulas, também é possível marcar o PDF e a página
+em que o professor parou.
 
-- Autenticacao com Supabase Auth.
-- Dashboard inicial com Hoje, Proximos prazos e Situacao das materias.
-- CRUD de materias.
-- CRUD de demandas, filtros e concluir demanda.
-- CRUD de topicos por materia, com status e ordenacao simples.
-- Avaliacoes separadas de notas obtidas, com vinculo a topicos cobrados.
-- Ordenacao manual das materias na sidebar.
-- Materiais por materia, com links e arquivos via Supabase Storage.
-- Visao semanal simples.
-- Pagina individual de materia com progresso, proxima avaliacao, conteudos, demandas e materiais futuros.
-- Tela de notas com proximas avaliacoes, resultados e media parcial.
+Os arquivos ficam em armazenamento privado, e o acesso aos dados é isolado por
+usuário com políticas de Row Level Security do Supabase.
 
-## Proximos passos
+## Recursos experimentais
 
-- Criar onboarding guiado para as 8 materias reais.
-- Melhorar validacoes e mensagens de erro.
-- Trocar o fallback demo por seed controlado em ambiente de desenvolvimento.
-- Evoluir a logica centralizada em `src/lib/priority.ts` para prioridade automatica.
+- **Tópicos com IA:** transforma PDFs selecionados em um rascunho editável de
+  conteúdos para uma avaliação. Nada é criado sem revisão e confirmação.
+- **Integração MCP:** permite que clientes compatíveis, como o ChatGPT, consultem
+  o contexto acadêmico do UniFlow por ferramentas somente de leitura.
+
+## Tecnologia
+
+O UniFlow é construído com **Next.js**, **React**, **TypeScript**, **Supabase** e
+**Vercel**. A interface utiliza componentes próprios e ícones do `lucide-react`.
+
+## Visão de produto
+
+Hoje o UniFlow é um projeto pessoal em evolução, desenvolvido e validado a partir
+de uma rotina universitária real. A direção futura é transformá-lo em um SaaS de
+organização acadêmica que continue simples mesmo quando o semestre não é.
+
+Entre os próximos passos estão um onboarding mais acessível, notificações úteis,
+integrações de calendário, automações de organização e assistência por IA com
+controle explícito do estudante.
+
+---
+
+<div align="center">
+
+Desenvolvido por [Luidgi Varela](https://github.com/LuidgiVarela).
+
+[Acessar o UniFlow](https://uniflow-gamma.vercel.app) · [Ver o repositório](https://github.com/LuidgiVarela/UniFlow)
+
+</div>

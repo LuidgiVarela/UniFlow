@@ -78,6 +78,16 @@ export type DemandQuestionItem = {
   created_at: string;
 };
 
+export type StudyDocument = {
+  id: string;
+  user_id?: string;
+  demand_id: string;
+  title: string;
+  content: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Topic = {
   id: string;
   user_id?: string;

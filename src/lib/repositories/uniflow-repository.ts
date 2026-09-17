@@ -16,6 +16,7 @@ import type {
   ReviewQueueItem,
   Subject,
   SubjectClassProgress,
+  StudyDocument,
   Topic,
   TopicPrerequisite,
 } from "@/types/domain";
@@ -24,6 +25,7 @@ const DEMO_KEY = "uniflow:demo-data";
 const MATERIAL_STORAGE_BUCKET = "subject-materials";
 const MATERIAL_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
 const MATERIAL_SIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60 * 6;
+const DEMO_STUDY_DOCUMENTS_KEY = "uniflow:study-documents";
 
 export type MaterialStorageUsage = {
   usedBytes: number;
@@ -71,6 +73,68 @@ async function requireUserId() {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw new Error("Usuário não autenticado.");
   return data.user.id;
+}
+
+function readDemoStudyDocuments() {
+  if (typeof window === "undefined") return [] as StudyDocument[];
+  try {
+    const stored = window.localStorage.getItem(DEMO_STUDY_DOCUMENTS_KEY);
+    return stored ? JSON.parse(stored) as StudyDocument[] : [];
+  } catch {
+    return [] as StudyDocument[];
+  }
+}
+
+function writeDemoStudyDocuments(documents: StudyDocument[]) {
+  window.localStorage.setItem(DEMO_STUDY_DOCUMENTS_KEY, JSON.stringify(documents));
+}
+
+export async function loadStudyDocument(demandId: string) {
+  if (!hasSupabaseEnv || !supabase) {
+    return readDemoStudyDocuments().find((document) => document.demand_id === demandId) ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from("study_documents")
+    .select("*")
+    .eq("demand_id", demandId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as StudyDocument | null;
+}
+
+export async function saveStudyDocument(document: StudyDocument) {
+  const updated_at = new Date().toISOString();
+  if (!hasSupabaseEnv || !supabase) {
+    const documents = readDemoStudyDocuments();
+    const existing = documents.find((item) => item.demand_id === document.demand_id);
+    const nextDocument: StudyDocument = {
+      ...document,
+      id: existing?.id ?? document.id,
+      created_at: existing?.created_at ?? document.created_at,
+      updated_at,
+    };
+    writeDemoStudyDocuments([
+      ...documents.filter((item) => item.demand_id !== document.demand_id),
+      nextDocument,
+    ]);
+    return nextDocument;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("study_documents")
+    .upsert({
+      user_id,
+      demand_id: document.demand_id,
+      title: document.title,
+      content: document.content,
+      updated_at,
+    }, { onConflict: "user_id,demand_id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as StudyDocument;
 }
 
 export async function loadAppData(): Promise<AppData> {

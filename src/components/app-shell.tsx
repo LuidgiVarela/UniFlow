@@ -125,6 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     reorderSubjects,
   } = useAppData();
   const pdfEditorMode = pathname.startsWith("/materiais/editar/");
+  const studyDocumentEditorMode = /^\/tarefas\/[^/]+\/caderno/.test(pathname);
   const sortedSubjects = [...subjects].sort((a, b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
   const storagePercent = storageUsage
     ? Math.min(100, Math.round((storageUsage.usedBytes / storageUsage.limitBytes) * 100))
@@ -153,6 +154,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     if (pathname === "/revisoes") {
       document.title = "UniFlow - Revisões";
+      return;
+    }
+
+    const studyDocumentMatch = pathname.match(/^\/tarefas\/([^/]+)\/caderno/);
+    if (studyDocumentMatch) {
+      const demand = demands.find((item) => item.id === studyDocumentMatch[1]);
+      document.title = demand ? `Caderno - ${demand.title}` : "UniFlow - Caderno";
       return;
     }
 
@@ -219,7 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${pdfEditorMode ? "pdf-editor-shell" : ""}`}>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${pdfEditorMode ? "pdf-editor-shell" : ""} ${studyDocumentEditorMode ? "study-document-shell" : ""}`}>
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand">
           <span>UniFlow</span>

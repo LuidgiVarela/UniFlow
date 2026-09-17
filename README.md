@@ -51,6 +51,7 @@ espaço de matérias, arquivos, notas e histórico de estudos.
 | **Materiais** | Pastas aninhadas, reordenação por arrastar, movimentação de arquivos, download em ZIP e marcador de onde a turma parou. |
 | **PDFs** | Leitura em nova aba e editor para textos, imagens, destaques e desenhos, preservando o original quando desejado. |
 | **Listas** | Progresso por questão e item, dificuldade, observações e suporte para listas que começam na questão zero. |
+| **Cadernos** | Editor de respostas vinculado às listas, com formatação rica, imagens, autosave, sumário de questões e exportação em PDF. |
 | **Faltômetro** | Controle de presença, limite de faltas e projeção do restante do semestre. |
 
 ## Revisões que se adaptam à rotina
@@ -70,6 +71,16 @@ As prioridades consideram fatores como:
 
 O histórico em formato de mapa de atividade ajuda a enxergar consistência sem
 transformar o estudo em uma obrigação punitiva.
+
+## Cadernos para listas
+
+Cada lista pode ter um caderno próprio para respostas discursivas. O editor reúne
+fontes, tamanhos, espaçamento, destaques, imagens, listas e blocos de código em uma
+folha preparada para impressão. As questões do dashboard podem ser inseridas como
+estrutura do documento sem substituir o que já foi escrito.
+
+O conteúdo é salvo automaticamente e também recebe uma cópia local de segurança.
+Depois, o caderno pode ser retomado para edição ou exportado em PDF.
 
 ## Materiais sem perder o contexto
 
@@ -91,7 +102,8 @@ usuário com políticas de Row Level Security do Supabase.
 ## Tecnologia
 
 O UniFlow é construído com **Next.js**, **React**, **TypeScript**, **Supabase** e
-**Vercel**. A interface utiliza componentes próprios e ícones do `lucide-react`.
+**Vercel**. A interface utiliza componentes próprios, `Tiptap` para edição de
+documentos e ícones do `lucide-react`.
 
 ## Visão de produto
 

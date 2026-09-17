@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Plus, Star, Trash2 } from "lucide-react";
+import { Check, NotebookPen, Plus, Star, Trash2 } from "lucide-react";
+import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
@@ -138,9 +139,19 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
   return (
     <section className="task-dashboard-page">
       <div className="task-dashboard-hero">
-        <div>
-          <h1>{demand.title}</h1>
-          <p>{progressText(doneItems, totalItems)} - {percent}%</p>
+        <div className="task-dashboard-hero-top">
+          <div>
+            <h1>{demand.title}</h1>
+            <p>{progressText(doneItems, totalItems)} - {percent}%</p>
+          </div>
+          <Link
+            className="ghost-action task-notebook-action"
+            href={`/tarefas/${demand.id}/caderno`}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            <NotebookPen size={17} />Caderno da lista
+          </Link>
         </div>
         <div className="task-dashboard-progress">
           <div className="progress-track subtle">

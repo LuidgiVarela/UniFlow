@@ -3,6 +3,7 @@
 import Highlight from "@tiptap/extension-highlight";
 import TiptapImage from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
+import { TableKit } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyleKit } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
@@ -16,6 +17,7 @@ import {
   Bold,
   Check,
   Code2,
+  Columns3,
   FileDown,
   Highlighter,
   ImagePlus,
@@ -30,11 +32,16 @@ import {
   Plus,
   Quote,
   Redo2,
+  Rows3,
   Save,
   Strikethrough,
+  Table2,
+  Trash2,
   Underline,
   Undo2,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -42,6 +49,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { loadStudyDocument, saveStudyDocument } from "@/lib/repositories/uniflow-repository";
@@ -89,6 +97,14 @@ const editorExtensions = [
       alwaysPreserveAspectRatio: true,
     },
   }),
+  TableKit.configure({
+    table: {
+      allowTableNodeSelection: true,
+      cellMinWidth: 70,
+      lastColumnResizable: true,
+      resizable: true,
+    },
+  }),
 ];
 
 const fontFamilies = [
@@ -102,6 +118,11 @@ const fontFamilies = [
 
 const fontSizes = ["11", "12", "14", "16", "18", "20", "24", "28", "32"];
 const lineHeights = ["1", "1.15", "1.3", "1.5", "1.75", "2"];
+const TABLE_PICKER_ROWS = 8;
+const TABLE_PICKER_COLUMNS = 8;
+const MIN_ZOOM = 50;
+const MAX_ZOOM = 200;
+const ZOOM_STEP = 10;
 
 function localDocumentKey(demandId: string) {
   return `uniflow:study-document-draft:${demandId}`;
@@ -142,6 +163,41 @@ function normalizeQuestionLabel(value: string) {
   return value.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
 }
 
+function questionItemLabel(value: string) {
+  const clean = value.trim();
+  return /[.)]$/.test(clean) ? clean : `${clean})`;
+}
+
+function jsonNodeText(node: JSONContent): string {
+  if (node.text) return node.text;
+  return node.content?.map(jsonNodeText).join("") ?? "";
+}
+
+function normalizeLegacyQuestionItems(content: JSONContent, itemLabels: string[]) {
+  const labels = new Set(itemLabels);
+  let changed = false;
+
+  function visit(node: JSONContent): JSONContent {
+    const next = node.content
+      ? { ...node, content: node.content.map(visit) }
+      : { ...node };
+
+    if (next.type !== "heading" || next.attrs?.level !== 3) return next;
+    const text = jsonNodeText(next).trimStart();
+    const isGeneratedItem = /^[a-z]\)(?:\s|$)/i.test(text)
+      || [...labels].some((label) => text === label || text.startsWith(`${label} `));
+    if (!isGeneratedItem) return next;
+
+    changed = true;
+    const paragraph = { ...next, type: "paragraph" };
+    delete paragraph.attrs;
+    return paragraph;
+  }
+
+  const normalizedContent = visit(content);
+  return { changed, content: normalizedContent };
+}
+
 function findQuestionPosition(editor: Editor, label: string): number | null {
   const target = normalizeQuestionLabel(label);
   let result: number | null = null;
@@ -168,13 +224,14 @@ function questionNodes(question: NotebookQuestion): JSONContent[] {
   if (!question.items.length) return [...nodes, { type: "paragraph" }];
 
   for (const item of question.items) {
-    const label = /[.)]$/.test(item.trim()) ? item.trim() : `${item.trim()})`;
+    const label = questionItemLabel(item);
     nodes.push({
-      type: "heading",
-      attrs: { level: 3 },
-      content: [{ type: "text", text: label }],
+      type: "paragraph",
+      content: [
+        { type: "text", marks: [{ type: "bold" }], text: label },
+        { type: "text", text: " " },
+      ],
     });
-    nodes.push({ type: "paragraph" });
   }
   return nodes;
 }
@@ -241,6 +298,7 @@ function ToolbarButton({
       aria-pressed={active}
       className={`study-toolbar-button ${active ? "active" : ""}`}
       disabled={disabled}
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
       title={label}
       type="button"
@@ -260,6 +318,9 @@ export function StudyDocumentEditor({
   subject: Subject | null;
 }) {
   const defaultTitle = `Respostas - ${demand.title}`;
+  const legacyItemLabelsKey = questions
+    .flatMap((question) => question.items.map(questionItemLabel))
+    .join("\u001f");
   const [title, setTitle] = useState(defaultTitle);
   const [status, setStatus] = useState<SaveStatus>("loading");
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -267,8 +328,14 @@ export function StudyDocumentEditor({
   const [wordCount, setWordCount] = useState(0);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [zoomInput, setZoomInput] = useState("100");
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [tableSize, setTableSize] = useState({ rows: 2, columns: 2 });
+  const [tableMenuPosition, setTableMenuPosition] = useState({ top: 108, left: 12 });
   const [, refreshToolbar] = useReducer((value: number) => value + 1, 0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const tableControlRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<StudyDocument | null>(null);
   const titleRef = useRef(defaultTitle);
   const readyRef = useRef(false);
@@ -334,6 +401,35 @@ export function StudyDocumentEditor({
     setStatus("dirty");
     setSyncError(null);
     scheduleSave();
+  }
+
+  function applyZoom(value: number) {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value)));
+    setZoom(next);
+    setZoomInput(String(next));
+  }
+
+  function commitZoom() {
+    const parsed = Number.parseInt(zoomInput, 10);
+    applyZoom(Number.isFinite(parsed) ? parsed : zoom);
+  }
+
+  function toggleTablePicker() {
+    if (!tablePickerOpen && tableControlRef.current) {
+      const bounds = tableControlRef.current.getBoundingClientRect();
+      const popoverWidth = 292;
+      setTableMenuPosition({
+        top: Math.min(window.innerHeight - 24, bounds.bottom + 8),
+        left: Math.max(12, Math.min(bounds.left, window.innerWidth - popoverWidth - 12)),
+      });
+    }
+    setTablePickerOpen((value) => !value);
+  }
+
+  function insertTable(rows: number, columns: number) {
+    if (!editor) return;
+    editor.chain().focus().insertTable({ rows, cols: columns, withHeaderRow: false }).run();
+    setTablePickerOpen(false);
   }
 
   async function saveNow(force = false) {
@@ -437,21 +533,30 @@ export function StudyDocumentEditor({
         created_at: now,
         updated_at: now,
       };
+      const normalized = normalizeLegacyQuestionItems(
+        initial.content as JSONContent,
+        legacyItemLabelsKey ? legacyItemLabelsKey.split("\u001f") : [],
+      );
+      const loadedDocument = normalized.changed
+        ? { ...initial, content: normalized.content as Record<string, unknown> }
+        : initial;
 
-      documentRef.current = initial;
-      titleRef.current = initial.title;
-      setTitle(initial.title);
-      currentEditor.commands.setContent(initial.content as JSONContent, { emitUpdate: false });
+      documentRef.current = loadedDocument;
+      titleRef.current = loadedDocument.title;
+      setTitle(loadedDocument.title);
+      currentEditor.commands.setContent(loadedDocument.content as JSONContent, { emitUpdate: false });
       currentEditor.setEditable(true);
       setWordCount(countWords(currentEditor.getText()));
       setSavedAt(remote?.updated_at ?? null);
       lastSavedSignatureRef.current = remote ? documentSignature(remote) : documentSignature(initial);
       readyRef.current = true;
 
+      if (normalized.changed) writeLocalDocument(loadedDocument);
+
       if (remoteError) {
         setStatus("local");
         setSyncError("Sincronização indisponível. O rascunho continuará protegido neste navegador.");
-      } else if (localIsNewer) {
+      } else if (localIsNewer || normalized.changed) {
         setStatus("dirty");
         scheduleSave(180);
       } else {
@@ -465,7 +570,7 @@ export function StudyDocumentEditor({
       readyRef.current = false;
       if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     };
-  }, [defaultTitle, demand.id, editor]);
+  }, [defaultTitle, demand.id, editor, legacyItemLabelsKey]);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -477,6 +582,25 @@ export function StudyDocumentEditor({
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, []);
+
+  useEffect(() => {
+    if (!tablePickerOpen) return;
+
+    function closeTablePicker(event: PointerEvent) {
+      if (!tableControlRef.current?.contains(event.target as Node)) setTablePickerOpen(false);
+    }
+
+    function closeTablePickerWithKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") setTablePickerOpen(false);
+    }
+
+    window.addEventListener("pointerdown", closeTablePicker);
+    window.addEventListener("keydown", closeTablePickerWithKeyboard);
+    return () => {
+      window.removeEventListener("pointerdown", closeTablePicker);
+      window.removeEventListener("keydown", closeTablePickerWithKeyboard);
+    };
+  }, [tablePickerOpen]);
 
   const questionPositions = new Map<string, number>();
   if (editor) {
@@ -630,6 +754,33 @@ export function StudyDocumentEditor({
           <ToolbarButton disabled={!editor?.can().undo()} label="Desfazer" onClick={() => editor?.chain().focus().undo().run()}><Undo2 size={17} /></ToolbarButton>
           <ToolbarButton disabled={!editor?.can().redo()} label="Refazer" onClick={() => editor?.chain().focus().redo().run()}><Redo2 size={17} /></ToolbarButton>
         </div>
+        <div className="study-toolbar-group study-zoom-control">
+          <ToolbarButton disabled={zoom <= MIN_ZOOM} label="Diminuir zoom" onClick={() => applyZoom(zoom - ZOOM_STEP)}><ZoomOut size={17} /></ToolbarButton>
+          <label className="study-zoom-field" title="Zoom da página">
+            <input
+              aria-label="Zoom da página"
+              inputMode="numeric"
+              max={MAX_ZOOM}
+              min={MIN_ZOOM}
+              onBlur={commitZoom}
+              onChange={(event) => {
+                const value = event.target.value.replace(/\D/g, "");
+                setZoomInput(value);
+                const parsed = Number.parseInt(value, 10);
+                if (parsed >= MIN_ZOOM && parsed <= MAX_ZOOM) setZoom(parsed);
+              }}
+              onFocus={(event) => event.currentTarget.select()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              step={ZOOM_STEP}
+              type="number"
+              value={zoomInput}
+            />
+            <span>%</span>
+          </label>
+          <ToolbarButton disabled={zoom >= MAX_ZOOM} label="Aumentar zoom" onClick={() => applyZoom(zoom + ZOOM_STEP)}><ZoomIn size={17} /></ToolbarButton>
+        </div>
         <div className="study-toolbar-group">
           <select aria-label="Estilo do parágrafo" className="study-toolbar-select block-style" disabled={!editor} onChange={(event) => handleBlockType(event.target.value)} value={blockType}>
             <option value="paragraph">Texto normal</option>
@@ -717,6 +868,58 @@ export function StudyDocumentEditor({
             ref={imageInputRef}
             type="file"
           />
+          <div className="study-table-control" ref={tableControlRef}>
+            <ToolbarButton active={tablePickerOpen || Boolean(editor?.isActive("table"))} label="Tabela" onClick={toggleTablePicker}>
+              <Table2 size={17} />
+            </ToolbarButton>
+            {tablePickerOpen ? (
+              <div
+                className="study-table-popover"
+                style={{ left: tableMenuPosition.left, top: tableMenuPosition.top }}
+              >
+                <div className="study-table-popover-heading">
+                  <strong>Inserir tabela</strong>
+                  <span>{tableSize.rows} x {tableSize.columns}</span>
+                </div>
+                <div
+                  aria-label={`Tabela com ${tableSize.rows} linhas e ${tableSize.columns} colunas`}
+                  className="study-table-grid"
+                  role="group"
+                  style={{ "--table-picker-columns": TABLE_PICKER_COLUMNS } as CSSProperties}
+                >
+                  {Array.from({ length: TABLE_PICKER_ROWS * TABLE_PICKER_COLUMNS }, (_, index) => {
+                    const row = Math.floor(index / TABLE_PICKER_COLUMNS) + 1;
+                    const column = (index % TABLE_PICKER_COLUMNS) + 1;
+                    const selected = row <= tableSize.rows && column <= tableSize.columns;
+                    return (
+                      <button
+                        aria-label={`${row} linhas por ${column} colunas`}
+                        className={selected ? "selected" : ""}
+                        key={`${row}-${column}`}
+                        onClick={() => insertTable(row, column)}
+                        onFocus={() => setTableSize({ rows: row, columns: column })}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() => setTableSize({ rows: row, columns: column })}
+                        type="button"
+                      />
+                    );
+                  })}
+                </div>
+                {editor?.isActive("table") ? (
+                  <div className="study-table-actions">
+                    <span>Editar tabela selecionada</span>
+                    <div>
+                      <button onClick={() => editor.chain().focus().addRowAfter().run()} onMouseDown={(event) => event.preventDefault()} title="Adicionar linha abaixo" type="button"><Rows3 size={15} />+ Linha</button>
+                      <button onClick={() => editor.chain().focus().deleteRow().run()} onMouseDown={(event) => event.preventDefault()} title="Excluir linha" type="button"><Rows3 size={15} />- Linha</button>
+                      <button onClick={() => editor.chain().focus().addColumnAfter().run()} onMouseDown={(event) => event.preventDefault()} title="Adicionar coluna depois" type="button"><Columns3 size={15} />+ Coluna</button>
+                      <button onClick={() => editor.chain().focus().deleteColumn().run()} onMouseDown={(event) => event.preventDefault()} title="Excluir coluna" type="button"><Columns3 size={15} />- Coluna</button>
+                      <button className="danger" onClick={() => editor.chain().focus().deleteTable().run()} onMouseDown={(event) => event.preventDefault()} title="Excluir tabela" type="button"><Trash2 size={15} />Excluir tabela</button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -752,7 +955,10 @@ export function StudyDocumentEditor({
 
         <main className="study-document-canvas">
           {syncError ? <div className="study-document-sync-alert" role="status">{syncError}</div> : null}
-          <article className="study-document-paper">
+          <article
+            className="study-document-paper"
+            style={{ "--study-document-zoom": zoom / 100 } as CSSProperties}
+          >
             {status === "loading" ? (
               <div className="study-document-loading"><LoaderCircle className="spin-icon" size={22} />Abrindo caderno...</div>
             ) : null}

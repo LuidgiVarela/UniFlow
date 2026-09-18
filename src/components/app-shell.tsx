@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  CalendarDays,
   CalendarX2,
   BookOpenCheck,
   CircleAlert,
@@ -157,6 +158,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (pathname === "/calendario") {
+      document.title = "UniFlow - Calendário";
+      return;
+    }
+
     const studyDocumentMatch = pathname.match(/^\/tarefas\/([^/]+)\/caderno/);
     if (studyDocumentMatch) {
       const demand = demands.find((item) => item.id === studyDocumentMatch[1]);
@@ -241,6 +247,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link className={`nav-item ${pathname === "/revisoes" ? "active" : ""}`} href="/revisoes" onClick={() => setMenuOpen(false)}>
             <BookOpenCheck size={17} />
             <span>Revisões</span>
+          </Link>
+          <Link className={`nav-item ${pathname === "/calendario" ? "active" : ""}`} href="/calendario" onClick={() => setMenuOpen(false)}>
+            <CalendarDays size={17} />
+            <span>Calendário</span>
           </Link>
           <Link className={`nav-item ${pathname === "/faltometro" ? "active" : ""}`} href="/faltometro" onClick={() => setMenuOpen(false)}>
             <CalendarX2 size={17} />

@@ -1,5 +1,6 @@
 "use client";
 
+import { Extension } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
 import TiptapImage from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -21,6 +22,8 @@ import {
   FileDown,
   Highlighter,
   ImagePlus,
+  IndentDecrease,
+  IndentIncrease,
   Italic,
   Link2,
   List,
@@ -73,6 +76,79 @@ const EMPTY_DOCUMENT: JSONContent = {
   type: "doc",
   content: [{ type: "paragraph" }],
 };
+const MAX_INDENT_LEVEL = 8;
+
+function changeBlockIndent(editor: Editor, direction: -1 | 1) {
+  const { state, view } = editor;
+  const positions = new Map<number, { attrs: Record<string, unknown> }>();
+  const { $from, from, to } = state.selection;
+
+  state.doc.nodesBetween(from, to, (node, position) => {
+    if (node.type.name === "paragraph" || node.type.name === "heading") {
+      positions.set(position, { attrs: node.attrs as Record<string, unknown> });
+      return false;
+    }
+    return true;
+  });
+
+  if (!positions.size) {
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const node = $from.node(depth);
+      if (node.type.name !== "paragraph" && node.type.name !== "heading") continue;
+      positions.set($from.before(depth), { attrs: node.attrs as Record<string, unknown> });
+      break;
+    }
+  }
+
+  let transaction = state.tr;
+  let changed = false;
+  positions.forEach(({ attrs }, position) => {
+    const current = Number(attrs.indentLevel ?? 0);
+    const next = Math.max(0, Math.min(MAX_INDENT_LEVEL, current + direction));
+    if (next === current) return;
+    transaction = transaction.setNodeMarkup(position, undefined, { ...attrs, indentLevel: next });
+    changed = true;
+  });
+
+  if (!changed) return false;
+  view.dispatch(transaction.scrollIntoView());
+  return true;
+}
+
+const BlockIndent = Extension.create({
+  name: "blockIndent",
+  priority: 1_000,
+
+  addGlobalAttributes() {
+    return [{
+      types: ["paragraph", "heading"],
+      attributes: {
+        indentLevel: {
+          default: 0,
+          parseHTML: (element) => Number.parseInt(element.getAttribute("data-indent") ?? "0", 10) || 0,
+          renderHTML: (attributes) => attributes.indentLevel
+            ? { "data-indent": String(attributes.indentLevel) }
+            : {},
+        },
+      },
+    }];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      "Mod-a": () => this.editor.commands.selectAll(),
+      Tab: () => {
+        if (this.editor.isActive("table") || this.editor.isActive("listItem")) return false;
+        if (this.editor.isActive("codeBlock")) return this.editor.commands.insertContent("\t");
+        return changeBlockIndent(this.editor, 1);
+      },
+      "Shift-Tab": () => {
+        if (this.editor.isActive("table") || this.editor.isActive("listItem")) return false;
+        return changeBlockIndent(this.editor, -1);
+      },
+    };
+  },
+});
 
 const editorExtensions = [
   StarterKit.configure({
@@ -105,6 +181,7 @@ const editorExtensions = [
       resizable: true,
     },
   }),
+  BlockIndent,
 ];
 
 const fontFamilies = [
@@ -241,6 +318,32 @@ function countWords(value: string) {
   return clean ? clean.split(/\s+/).length : 0;
 }
 
+function uniformTextStyleAttribute(editor: Editor | null, attribute: string, fallback: string) {
+  if (!editor) return fallback;
+  const { doc, selection } = editor.state;
+  if (selection.empty) {
+    return String(editor.getAttributes("textStyle")[attribute] ?? fallback);
+  }
+
+  let current: unknown;
+  let hasText = false;
+  let mixed = false;
+  doc.nodesBetween(selection.from, selection.to, (node) => {
+    if (!node.isText) return true;
+    const mark = node.marks.find((item) => item.type.name === "textStyle");
+    const value = mark?.attrs[attribute] ?? fallback;
+    if (!hasText) {
+      current = value;
+      hasText = true;
+    } else if (current !== value) {
+      mixed = true;
+    }
+    return !mixed;
+  });
+
+  return mixed ? "" : String(current ?? fallback);
+}
+
 function formatSavedTime(value: string | null) {
   if (!value) return "Salvo";
   return `Salvo às ${new Intl.DateTimeFormat("pt-BR", {
@@ -344,6 +447,7 @@ export function StudyDocumentEditor({
   const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const needsResaveRef = useRef(false);
   const saveNowRef = useRef<(force?: boolean) => Promise<boolean>>(async () => false);
+  const textSelectionRef = useRef({ from: 1, to: 1 });
 
   const editor = useEditor({
     extensions: editorExtensions,
@@ -356,7 +460,11 @@ export function StudyDocumentEditor({
         spellcheck: "true",
       },
     },
-    onSelectionUpdate: () => refreshToolbar(),
+    onSelectionUpdate: ({ editor: currentEditor }) => {
+      const { from, to } = currentEditor.state.selection;
+      textSelectionRef.current = { from, to };
+      refreshToolbar();
+    },
     onUpdate: ({ editor: currentEditor }) => {
       if (!readyRef.current) return;
       refreshToolbar();
@@ -383,6 +491,20 @@ export function StudyDocumentEditor({
       content: currentEditor.getJSON() as Record<string, unknown>,
       updated_at: now,
     } satisfies StudyDocument;
+  }
+
+  function rememberTextSelection() {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    textSelectionRef.current = { from, to };
+  }
+
+  function selectedChain() {
+    if (!editor) return null;
+    const max = editor.state.doc.content.size;
+    const from = Math.max(0, Math.min(textSelectionRef.current.from, max));
+    const to = Math.max(from, Math.min(textSelectionRef.current.to, max));
+    return editor.chain().focus().setTextSelection({ from, to });
   }
 
   function scheduleSave(delay = AUTOSAVE_DELAY_MS) {
@@ -427,8 +549,7 @@ export function StudyDocumentEditor({
   }
 
   function insertTable(rows: number, columns: number) {
-    if (!editor) return;
-    editor.chain().focus().insertTable({ rows, cols: columns, withHeaderRow: false }).run();
+    selectedChain()?.insertTable({ rows, cols: columns, withHeaderRow: false }).run();
     setTablePickerOpen(false);
   }
 
@@ -653,21 +774,21 @@ export function StudyDocumentEditor({
 
   function handleBlockType(value: string) {
     if (!editor) return;
-    if (value === "paragraph") editor.chain().focus().setParagraph().run();
-    else if (value === "quote") editor.chain().focus().toggleBlockquote().run();
-    else if (value === "code") editor.chain().focus().toggleCodeBlock().run();
-    else editor.chain().focus().setHeading({ level: Number(value.slice(1)) as 1 | 2 | 3 }).run();
+    if (value === "paragraph") selectedChain()?.setParagraph().run();
+    else if (value === "quote") selectedChain()?.toggleBlockquote().run();
+    else if (value === "code") selectedChain()?.toggleCodeBlock().run();
+    else selectedChain()?.setHeading({ level: Number(value.slice(1)) as 1 | 2 | 3 }).run();
   }
 
   function handleLink() {
     if (!editor) return;
     if (editor.isActive("link")) {
-      editor.chain().focus().unsetLink().run();
+      selectedChain()?.unsetLink().run();
       return;
     }
     const href = window.prompt("Endereço do link:", "https://");
     if (!href) return;
-    editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+    selectedChain()?.extendMarkRange("link").setLink({ href }).run();
   }
 
   async function handleImage(file?: File) {
@@ -680,7 +801,7 @@ export function StudyDocumentEditor({
     setSyncError(null);
     try {
       const src = await optimizeImage(file);
-      editor.chain().focus().setImage({ src, alt: file.name, title: file.name }).run();
+      selectedChain()?.setImage({ src, alt: file.name, title: file.name }).run();
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "Não foi possível adicionar a imagem.");
     } finally {
@@ -711,6 +832,9 @@ export function StudyDocumentEditor({
             ? "code"
             : "paragraph";
   const textStyle = editor?.getAttributes("textStyle") ?? {};
+  const fontFamilyValue = uniformTextStyleAttribute(editor, "fontFamily", "Arial, sans-serif");
+  const fontSizeValue = uniformTextStyleAttribute(editor, "fontSize", "16px").replace("px", "");
+  const lineHeightValue = uniformTextStyleAttribute(editor, "lineHeight", "1.5");
 
   return (
     <section className="study-document-page">
@@ -782,7 +906,7 @@ export function StudyDocumentEditor({
           <ToolbarButton disabled={zoom >= MAX_ZOOM} label="Aumentar zoom" onClick={() => applyZoom(zoom + ZOOM_STEP)}><ZoomIn size={17} /></ToolbarButton>
         </div>
         <div className="study-toolbar-group">
-          <select aria-label="Estilo do parágrafo" className="study-toolbar-select block-style" disabled={!editor} onChange={(event) => handleBlockType(event.target.value)} value={blockType}>
+          <select aria-label="Estilo do parágrafo" className="study-toolbar-select block-style" disabled={!editor} onChange={(event) => handleBlockType(event.target.value)} onPointerDown={rememberTextSelection} value={blockType}>
             <option value="paragraph">Texto normal</option>
             <option value="h1">Título</option>
             <option value="h2">Subtítulo</option>
@@ -796,60 +920,67 @@ export function StudyDocumentEditor({
             disabled={!editor}
             onChange={(event) => {
               const value = event.target.value;
-              if (value) editor?.chain().focus().setFontFamily(value).run();
-              else editor?.chain().focus().unsetFontFamily().run();
+              if (value) selectedChain()?.setFontFamily(value).run();
+              else selectedChain()?.unsetFontFamily().run();
             }}
-            value={textStyle.fontFamily ?? ""}
+            onPointerDown={rememberTextSelection}
+            value={fontFamilyValue}
           >
-            <option value="">Fonte</option>
+            <option disabled value="">Várias fontes</option>
             {fontFamilies.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}
           </select>
           <select
             aria-label="Tamanho da fonte"
             className="study-toolbar-select font-size"
             disabled={!editor}
-            onChange={(event) => editor?.chain().focus().setFontSize(`${event.target.value}px`).run()}
-            value={(textStyle.fontSize as string | undefined)?.replace("px", "") ?? "16"}
+            onChange={(event) => selectedChain()?.setFontSize(`${event.target.value}px`).run()}
+            onPointerDown={rememberTextSelection}
+            value={fontSizeValue}
           >
+            <option disabled value="">Vários</option>
             {fontSizes.map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
         </div>
         <div className="study-toolbar-group">
-          <ToolbarButton active={editor?.isActive("bold")} label="Negrito" onClick={() => editor?.chain().focus().toggleBold().run()}><Bold size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive("italic")} label="Itálico" onClick={() => editor?.chain().focus().toggleItalic().run()}><Italic size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive("underline")} label="Sublinhado" onClick={() => editor?.chain().focus().toggleUnderline().run()}><Underline size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive("strike")} label="Tachado" onClick={() => editor?.chain().focus().toggleStrike().run()}><Strikethrough size={17} /></ToolbarButton>
-          <label className="study-toolbar-color" title="Cor do texto">
+          <ToolbarButton active={editor?.isActive("bold")} label="Negrito" onClick={() => selectedChain()?.toggleBold().run()}><Bold size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive("italic")} label="Itálico" onClick={() => selectedChain()?.toggleItalic().run()}><Italic size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive("underline")} label="Sublinhado" onClick={() => selectedChain()?.toggleUnderline().run()}><Underline size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive("strike")} label="Tachado" onClick={() => selectedChain()?.toggleStrike().run()}><Strikethrough size={17} /></ToolbarButton>
+          <label className="study-toolbar-color" onPointerDown={rememberTextSelection} title="Cor do texto">
             <span aria-hidden="true" style={{ background: textStyle.color ?? "#202124" }} />
-            <input aria-label="Cor do texto" onChange={(event) => editor?.chain().focus().setColor(event.target.value).run()} type="color" value={textStyle.color ?? "#202124"} />
+            <input aria-label="Cor do texto" onChange={(event) => selectedChain()?.setColor(event.target.value).run()} type="color" value={textStyle.color ?? "#202124"} />
           </label>
-          <label className="study-toolbar-highlight" title="Marca-texto">
+          <label className="study-toolbar-highlight" onPointerDown={rememberTextSelection} title="Marca-texto">
             <Highlighter size={17} />
             <input
               aria-label="Cor do marca-texto"
-              onChange={(event) => editor?.chain().focus().setHighlight({ color: event.target.value }).run()}
+              onChange={(event) => selectedChain()?.setHighlight({ color: event.target.value }).run()}
               type="color"
               value={editor?.getAttributes("highlight").color ?? "#fff08a"}
             />
           </label>
         </div>
         <div className="study-toolbar-group">
-          <ToolbarButton active={editor?.isActive({ textAlign: "left" })} label="Alinhar à esquerda" onClick={() => editor?.chain().focus().setTextAlign("left").run()}><AlignLeft size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive({ textAlign: "center" })} label="Centralizar" onClick={() => editor?.chain().focus().setTextAlign("center").run()}><AlignCenter size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive({ textAlign: "right" })} label="Alinhar à direita" onClick={() => editor?.chain().focus().setTextAlign("right").run()}><AlignRight size={17} /></ToolbarButton>
-          <ToolbarButton active={editor?.isActive({ textAlign: "justify" })} label="Justificar" onClick={() => editor?.chain().focus().setTextAlign("justify").run()}><AlignJustify size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive({ textAlign: "left" })} label="Alinhar à esquerda" onClick={() => selectedChain()?.setTextAlign("left").run()}><AlignLeft size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive({ textAlign: "center" })} label="Centralizar" onClick={() => selectedChain()?.setTextAlign("center").run()}><AlignCenter size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive({ textAlign: "right" })} label="Alinhar à direita" onClick={() => selectedChain()?.setTextAlign("right").run()}><AlignRight size={17} /></ToolbarButton>
+          <ToolbarButton active={editor?.isActive({ textAlign: "justify" })} label="Justificar" onClick={() => selectedChain()?.setTextAlign("justify").run()}><AlignJustify size={17} /></ToolbarButton>
           <select
             aria-label="Espaçamento entre linhas"
             className="study-toolbar-select line-height"
             disabled={!editor}
-            onChange={(event) => editor?.chain().focus().setLineHeight(event.target.value).run()}
+            onChange={(event) => selectedChain()?.setLineHeight(event.target.value).run()}
+            onPointerDown={rememberTextSelection}
             title="Espaçamento entre linhas"
-            value={textStyle.lineHeight ?? "1.5"}
+            value={lineHeightValue}
           >
+            <option disabled value="">Vários</option>
             {lineHeights.map((height) => <option key={height} value={height}>{height}</option>)}
           </select>
         </div>
         <div className="study-toolbar-group">
+          <ToolbarButton label="Diminuir recuo" onClick={() => editor && changeBlockIndent(editor, -1)}><IndentDecrease size={17} /></ToolbarButton>
+          <ToolbarButton label="Aumentar recuo" onClick={() => editor && changeBlockIndent(editor, 1)}><IndentIncrease size={17} /></ToolbarButton>
           <ToolbarButton active={editor?.isActive("bulletList")} label="Lista com marcadores" onClick={() => editor?.chain().focus().toggleBulletList().run()}><List size={17} /></ToolbarButton>
           <ToolbarButton active={editor?.isActive("orderedList")} label="Lista numerada" onClick={() => editor?.chain().focus().toggleOrderedList().run()}><ListOrdered size={17} /></ToolbarButton>
           <ToolbarButton active={editor?.isActive("blockquote")} label="Citação" onClick={() => editor?.chain().focus().toggleBlockquote().run()}><Quote size={17} /></ToolbarButton>

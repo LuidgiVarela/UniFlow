@@ -98,10 +98,6 @@ function normalizedMaterialFolder(material: Material) {
   return material.folder_id ?? null;
 }
 
-function folderChildCount(folders: MaterialFolder[], folderId: string) {
-  return folders.filter((folder) => normalizedFolderParent(folder) === folderId).length;
-}
-
 function zipSafeName(name: string, fallback: string) {
   const clean = name.trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, " ");
   return clean || fallback;
@@ -288,12 +284,18 @@ export default function SubjectDetailPage() {
   useEffect(() => {
     function closeActionsMenu(event: PointerEvent | KeyboardEvent) {
       const menu = folderActionsRef.current;
-      if (!menu?.open) return;
       if (event instanceof KeyboardEvent && event.key === "Escape") {
-        menu.removeAttribute("open");
+        menu?.removeAttribute("open");
+        document.querySelectorAll<HTMLDetailsElement>(".material-row-actions-menu[open]")
+          .forEach((rowMenu) => rowMenu.removeAttribute("open"));
         return;
       }
-      if (event instanceof PointerEvent && !menu.contains(event.target as Node)) menu.removeAttribute("open");
+      if (!(event instanceof PointerEvent)) return;
+      if (menu?.open && !menu.contains(event.target as Node)) menu.removeAttribute("open");
+      document.querySelectorAll<HTMLDetailsElement>(".material-row-actions-menu[open]")
+        .forEach((rowMenu) => {
+          if (!rowMenu.contains(event.target as Node)) rowMenu.removeAttribute("open");
+        });
     }
 
     document.addEventListener("pointerdown", closeActionsMenu);
@@ -504,6 +506,10 @@ export default function SubjectDetailPage() {
 
   function closeFolderActions() {
     folderActionsRef.current?.removeAttribute("open");
+  }
+
+  function closeRowActions(event: React.MouseEvent<HTMLElement>) {
+    event.currentTarget.closest("details")?.removeAttribute("open");
   }
 
   function saveMaterialTreeWidth(nextWidth: number) {
@@ -955,9 +961,11 @@ export default function SubjectDetailPage() {
     }
   }
 
-  function renderFolder(folder: MaterialFolder) {
+  function renderFolder(folder: MaterialFolder, depth = 0): React.ReactNode {
     const folderMaterials = subjectMaterials.filter((material) => material.folder_id === folder.id);
-    const folderChildren = folderChildCount(subjectFolders, folder.id);
+    const folderChildren = subjectFolders.filter((item) => normalizedFolderParent(item) === folder.id);
+    const hasContents = folderChildren.length > 0 || folderMaterials.length > 0;
+    const isExpanded = hasContents && expandedFolderIds.has(folder.id);
     const isDeleting = deletingFolderIds.has(folder.id);
     const canReorderFolder =
       draggedFolderId !== null &&
@@ -970,82 +978,122 @@ export default function SubjectDetailPage() {
     const canDropMaterial = draggedMaterialId !== null;
 
     return (
-      <article
-        className={`simple-row material-row material-folder-row ${draggedFolderId === folder.id ? "dragging" : ""} ${dragOverFolderId === folder.id || dropTargetId === folder.id ? "drag-over" : ""}`}
-        draggable={!isDeleting}
-        key={folder.id}
-        onDragEnd={() => {
-          setDraggedFolderId(null);
-          setDragOverFolderId(null);
-          setDraggedMaterialId(null);
-          setDragOverMaterialId(null);
-          setDropTargetId(null);
-        }}
-        onDragLeave={() => {
-          setDragOverFolderId(null);
-          setDropTargetId(null);
-        }}
-        onDragOver={(event) => {
-          if (!canReorderFolder && !canDropFolder && !canDropMaterial) return;
-          event.preventDefault();
-          event.stopPropagation();
-          event.dataTransfer.dropEffect = "move";
-          if (canReorderFolder) setDragOverFolderId(folder.id);
-          if (canDropMaterial || canDropFolder) setDropTargetId(folder.id);
-        }}
-        onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", `folder:${folder.id}`);
-          setDraggedFolderId(folder.id);
-          setDraggedMaterialId(null);
-          setDragOverFolderId(null);
-          setMaterialError(null);
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const source = event.dataTransfer.getData("text/plain");
-          if (source.startsWith("material:")) {
-            void moveMaterialToFolder(source.replace(/^material:/, ""), folder.id);
-            return;
-          }
-          if (source.startsWith("folder:")) {
-            const sourceId = source.replace(/^folder:/, "");
-            const sourceFolder = subjectFolders.find((item) => item.id === sourceId);
-            if (sourceFolder && normalizedFolderParent(sourceFolder) === normalizedFolderParent(folder) && !isMiddleDrop(event)) {
-              void reorderFolderList(sourceId, folder.id);
+      <div className="material-inline-folder" key={folder.id}>
+        <article
+          className={`simple-row material-row material-folder-row ${draggedFolderId === folder.id ? "dragging" : ""} ${dragOverFolderId === folder.id || dropTargetId === folder.id ? "drag-over" : ""}`}
+          draggable={!isDeleting}
+          onDragEnd={() => {
+            setDraggedFolderId(null);
+            setDragOverFolderId(null);
+            setDraggedMaterialId(null);
+            setDragOverMaterialId(null);
+            setDropTargetId(null);
+          }}
+          onDragLeave={() => {
+            setDragOverFolderId(null);
+            setDropTargetId(null);
+          }}
+          onDragOver={(event) => {
+            if (!canReorderFolder && !canDropFolder && !canDropMaterial) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+            if (canReorderFolder) setDragOverFolderId(folder.id);
+            if (canDropMaterial || canDropFolder) setDropTargetId(folder.id);
+          }}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", `folder:${folder.id}`);
+            setDraggedFolderId(folder.id);
+            setDraggedMaterialId(null);
+            setDragOverFolderId(null);
+            setMaterialError(null);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const source = event.dataTransfer.getData("text/plain");
+            if (source.startsWith("material:")) {
+              void moveMaterialToFolder(source.replace(/^material:/, ""), folder.id);
               return;
             }
-            void moveFolderToParent(sourceId, folder.id);
-          }
-        }}
-        title="Arraste para reorganizar ou solte arquivos e pastas aqui"
-      >
-        <button className="material-folder-open explorer-entry-main" onClick={() => openMaterialFolder(folder.id)} type="button">
-          <Folder size={18} />
-          <span>
-            <strong>{folder.name}</strong>
-            <small>
-              {[
-                folderChildren ? `${folderChildren} ${folderChildren === 1 ? "pasta" : "pastas"}` : null,
-                folderMaterials.length ? `${folderMaterials.length} ${folderMaterials.length === 1 ? "material" : "materiais"}` : null,
-              ].filter(Boolean).join(" - ") || "Pasta vazia"}
-            </small>
-          </span>
-        </button>
-        <div className="row-actions">
-          <button className="icon-button" disabled={isDeleting} onClick={() => openFolderModal(folder)} title="Renomear pasta" type="button">
-            <Edit size={15} />
-          </button>
-          <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => deleteFolder(folder.id, folder.name)} title="Excluir pasta" type="button">
-            {isDeleting ? null : <Trash2 size={15} />}
-          </button>
-        </div>
-      </article>
+            if (source.startsWith("folder:")) {
+              const sourceId = source.replace(/^folder:/, "");
+              const sourceFolder = subjectFolders.find((item) => item.id === sourceId);
+              if (sourceFolder && normalizedFolderParent(sourceFolder) === normalizedFolderParent(folder) && !isMiddleDrop(event)) {
+                void reorderFolderList(sourceId, folder.id);
+                return;
+              }
+              void moveFolderToParent(sourceId, folder.id);
+            }
+          }}
+          style={{ "--material-inline-depth": depth } as React.CSSProperties}
+          title="Arraste para reorganizar ou solte arquivos e pastas aqui"
+        >
+          <div className="material-folder-entry">
+            {hasContents ? (
+              <button
+                aria-label={`${isExpanded ? "Recolher" : "Expandir"} ${folder.name}`}
+                className="material-folder-toggle"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleFolder(folder.id);
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                title={isExpanded ? "Recolher conteúdo" : "Mostrar conteúdo"}
+                type="button"
+              >
+                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+            ) : <span aria-hidden className="material-folder-toggle-spacer" />}
+            <button className="material-folder-open explorer-entry-main" onClick={() => openMaterialFolder(folder.id)} type="button">
+              {isExpanded ? <FolderOpen size={18} /> : <Folder size={18} />}
+              <span>
+                <strong>{folder.name}</strong>
+                <small>
+                  {[
+                    folderChildren.length ? `${folderChildren.length} ${folderChildren.length === 1 ? "pasta" : "pastas"}` : null,
+                    folderMaterials.length ? `${folderMaterials.length} ${folderMaterials.length === 1 ? "material" : "materiais"}` : null,
+                  ].filter(Boolean).join(" - ") || "Pasta vazia"}
+                </small>
+              </span>
+            </button>
+          </div>
+          <div className="row-actions">
+            <details className="material-row-actions-menu">
+              <summary aria-label={`Mais ações para ${folder.name}`} className="icon-button" onPointerDown={(event) => event.stopPropagation()} title="Mais ações">
+                <Ellipsis size={17} />
+              </summary>
+              <div className="material-row-actions-popover" role="menu">
+                <button
+                  disabled={isDeleting}
+                  onClick={(event) => {
+                    closeRowActions(event);
+                    openFolderModal(folder);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Edit size={15} /><span>Renomear pasta</span>
+                </button>
+              </div>
+            </details>
+            <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => deleteFolder(folder.id, folder.name)} title="Excluir pasta" type="button">
+              {isDeleting ? null : <Trash2 size={15} />}
+            </button>
+          </div>
+        </article>
+        {isExpanded ? (
+          <div className="material-inline-children">
+            {folderChildren.map((child) => renderFolder(child, depth + 1))}
+            {folderMaterials.map((material) => renderMaterial(material, depth + 1))}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
-  function renderMaterial(material: Material) {
+  function renderMaterial(material: Material, depth = 0) {
     const isClassProgress = classProgress?.material_id === material.id && Boolean(classProgress.page_number);
     const directHref = materialUrls[material.id];
     const fallbackHref = `/materiais/abrir/${encodeURIComponent(material.id)}`;
@@ -1096,6 +1144,7 @@ export default function SubjectDetailPage() {
           const source = event.dataTransfer.getData("text/plain").replace(/^material:/, "");
           void reorderMaterialList(source, material.id);
         }}
+        style={{ "--material-inline-depth": depth } as React.CSSProperties}
         title="Arraste para reorganizar ou mover"
       >
         {material.type === "file" ? <FileText size={18} /> : <LinkIcon size={18} />}
@@ -1104,47 +1153,59 @@ export default function SubjectDetailPage() {
           {isClassProgress ? <small><BookmarkCheck aria-hidden="true" size={12} />Turma · página {classProgress!.page_number}</small> : null}
         </div>
         <div className="row-actions">
-          <a
-            className="icon-button"
-            href={href}
-            rel="noreferrer"
-            target="_blank"
-            title="Abrir"
-          >
-            <ExternalLink size={15} />
-          </a>
-          {isPdfMaterial(material) ? (
-            <>
+          <details className="material-row-actions-menu">
+            <summary aria-label={`Mais ações para ${material.name}`} className="icon-button" onPointerDown={(event) => event.stopPropagation()} title="Mais ações">
+              <Ellipsis size={17} />
+            </summary>
+            <div className="material-row-actions-popover" role="menu">
               <a
-                className="icon-button"
-                href={`/materiais/editar/${material.id}`}
+                href={href}
+                onClick={closeRowActions}
                 rel="noreferrer"
+                role="menuitem"
                 target="_blank"
-                title="Editar PDF"
               >
-                <FilePenLine size={15} />
+                <ExternalLink size={15} /><span>Abrir em nova aba</span>
               </a>
+              {isPdfMaterial(material) ? (
+                <>
+                  <a
+                    href={`/materiais/editar/${material.id}`}
+                    onClick={closeRowActions}
+                    rel="noreferrer"
+                    role="menuitem"
+                    target="_blank"
+                  >
+                    <FilePenLine size={15} /><span>Editar PDF</span>
+                  </a>
+                  <button
+                    className={isClassProgress ? "active" : ""}
+                    disabled={isDeleting}
+                    onClick={(event) => {
+                      closeRowActions(event);
+                      openClassProgress(material);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {isClassProgress ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+                    <span>{isClassProgress ? "Editar ponto da turma" : "Marcar ponto da turma"}</span>
+                  </button>
+                </>
+              ) : null}
               <button
-                aria-label={isClassProgress ? "Editar ponto da turma" : "Marcar onde a turma parou"}
-                className={`icon-button ${isClassProgress ? "active" : ""}`}
                 disabled={isDeleting}
-                onClick={() => openClassProgress(material)}
-                title={isClassProgress ? "Editar ponto da turma" : "Marcar onde a turma parou"}
+                onClick={(event) => {
+                  closeRowActions(event);
+                  openMaterialNameModal(material);
+                }}
+                role="menuitem"
                 type="button"
               >
-                {isClassProgress ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+                <TextCursorInput size={15} /><span>Renomear</span>
               </button>
-            </>
-          ) : null}
-          <button
-            className="icon-button"
-            disabled={isDeleting}
-            onClick={() => openMaterialNameModal(material)}
-            title="Renomear"
-            type="button"
-          >
-            <TextCursorInput size={15} />
-          </button>
+            </div>
+          </details>
           <button className={`icon-button danger ${isDeleting ? "is-loading" : ""}`} disabled={isDeleting} onClick={() => deleteMaterial(material)} title="Excluir" type="button">
             {isDeleting ? null : <Trash2 size={15} />}
           </button>

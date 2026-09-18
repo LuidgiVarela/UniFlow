@@ -4319,7 +4319,7 @@ label {
   display: grid;
   grid-template-columns: var(--material-tree-width, 242px) 7px minmax(0, 1fr);
   min-height: 360px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.008);
@@ -4502,6 +4502,124 @@ body.is-resizing-material-tree {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.material-inline-folder,
+.material-inline-children {
+  display: contents;
+}
+
+.material-file-pane .material-row {
+  padding-left: calc(14px + (var(--material-inline-depth, 0) * 24px));
+}
+
+.material-folder-entry {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+}
+
+.material-folder-toggle,
+.material-folder-toggle-spacer {
+  width: 28px;
+  height: 32px;
+}
+
+.material-folder-toggle {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--subtle);
+  display: grid;
+  place-items: center;
+}
+
+.material-folder-toggle:hover,
+.material-folder-toggle:focus-visible {
+  background: var(--surface-strong);
+  color: var(--foreground);
+}
+
+.material-folder-open {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+}
+
+.material-folder-open > svg {
+  flex: 0 0 auto;
+}
+
+.material-row-actions-menu {
+  position: relative;
+}
+
+.material-row-actions-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.material-row-actions-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.material-row-actions-menu[open] {
+  z-index: 80;
+}
+
+.material-row:has(.material-row-actions-menu[open]) {
+  position: relative;
+  z-index: 70;
+}
+
+.material-row-actions-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 90;
+  width: max-content;
+  min-width: 210px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #101012;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+}
+
+.material-row-actions-popover > a,
+.material-row-actions-popover > button {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.material-row-actions-popover > a:hover,
+.material-row-actions-popover > button:hover,
+.material-row-actions-popover > button.active {
+  background: var(--surface-strong);
+  color: var(--foreground);
+}
+
+.material-row-actions-popover > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .material-file-pane .material-explorer-list.drop-active {

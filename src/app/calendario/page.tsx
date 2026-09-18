@@ -9,18 +9,21 @@ import {
   ChevronRight,
   ClipboardList,
   GraduationCap,
+  Landmark,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import { PageHeader } from "@/components/ui";
 import { assessmentStatusLabels, assessmentTypeLabels, demandStatusLabels, demandTypeLabels } from "@/lib/labels";
+import { UNB_2026_2_CALENDAR_SOURCE, unbAcademicEvents2026_2 } from "@/lib/unb-academic-calendar";
 
-type CalendarFilter = "all" | "assessment" | "demand";
+type CalendarFilter = "all" | "assessment" | "demand" | "institutional";
 
 type AcademicCalendarEvent = {
   id: string;
   date: string;
+  endDate?: string;
   href: string;
   kind: Exclude<CalendarFilter, "all">;
   title: string;
@@ -29,6 +32,7 @@ type AcademicCalendarEvent = {
   completed: boolean;
   subjectCode: string;
   subjectColor: string;
+  external?: boolean;
 };
 
 const weekDays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -47,6 +51,23 @@ function dateFromKey(value: string) {
 
 function sameMonth(left: Date, right: Date) {
   return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth();
+}
+
+function dateKeysInRange(start: string, end = start) {
+  const keys: string[] = [];
+  const cursor = dateFromKey(start);
+  const last = dateFromKey(end);
+  while (cursor <= last) {
+    keys.push(localDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return keys;
+}
+
+function eventTouchesMonth(event: AcademicCalendarEvent, month: Date) {
+  const monthStart = localDateKey(new Date(month.getFullYear(), month.getMonth(), 1, 12));
+  const monthEnd = localDateKey(new Date(month.getFullYear(), month.getMonth() + 1, 0, 12));
+  return event.date <= monthEnd && (event.endDate ?? event.date) >= monthStart;
 }
 
 function monthDays(reference: Date) {
@@ -125,7 +146,22 @@ export default function CalendarPage() {
       }];
     });
 
-    return [...assessmentEvents, ...demandEvents].sort((left, right) => (
+    const institutionalEvents = unbAcademicEvents2026_2.map<AcademicCalendarEvent>((event) => ({
+      id: event.id,
+      date: event.date,
+      endDate: event.endDate,
+      href: UNB_2026_2_CALENDAR_SOURCE,
+      kind: "institutional",
+      title: event.title,
+      typeLabel: "Calendário acadêmico 2026.2",
+      statusLabel: event.label,
+      completed: false,
+      subjectCode: "UnB",
+      subjectColor: event.color,
+      external: true,
+    }));
+
+    return [...assessmentEvents, ...demandEvents, ...institutionalEvents].sort((left, right) => (
       left.date.localeCompare(right.date)
       || Number(left.completed) - Number(right.completed)
       || left.title.localeCompare(right.title, "pt-BR")
@@ -136,15 +172,18 @@ export default function CalendarPage() {
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, AcademicCalendarEvent[]>();
     filteredEvents.forEach((event) => {
-      grouped.set(event.date, [...(grouped.get(event.date) ?? []), event]);
+      dateKeysInRange(event.date, event.endDate).forEach((date) => {
+        grouped.set(date, [...(grouped.get(date) ?? []), event]);
+      });
     });
     return grouped;
   }, [filteredEvents]);
   const days = useMemo(() => monthDays(viewMonth), [viewMonth]);
   const selectedEvents = eventsByDate.get(selectedDate) ?? [];
-  const visibleMonthEvents = filteredEvents.filter((event) => sameMonth(dateFromKey(event.date), viewMonth));
+  const visibleMonthEvents = filteredEvents.filter((event) => eventTouchesMonth(event, viewMonth));
   const visibleAssessmentCount = visibleMonthEvents.filter((event) => event.kind === "assessment").length;
-  const visibleDemandCount = visibleMonthEvents.length - visibleAssessmentCount;
+  const visibleDemandCount = visibleMonthEvents.filter((event) => event.kind === "demand").length;
+  const visibleInstitutionalCount = visibleMonthEvents.filter((event) => event.kind === "institutional").length;
 
   function changeMonth(direction: -1 | 1) {
     const next = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + direction, 1, 12);
@@ -169,13 +208,14 @@ export default function CalendarPage() {
               <CalendarDays aria-hidden="true" size={19} />
               <h2>{monthLabel(viewMonth)}</h2>
             </div>
-            <p>{visibleMonthEvents.length} {visibleMonthEvents.length === 1 ? "compromisso" : "compromissos"} · {visibleAssessmentCount} avaliações · {visibleDemandCount} tarefas</p>
+            <p>{visibleMonthEvents.length} {visibleMonthEvents.length === 1 ? "compromisso" : "compromissos"} · {visibleAssessmentCount} avaliações · {visibleDemandCount} tarefas · {visibleInstitutionalCount} UnB</p>
           </div>
 
           <div aria-label="Filtrar calendário" className="calendar-filter" role="group">
             <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")} type="button">Todos</button>
             <button className={filter === "assessment" ? "active" : ""} onClick={() => setFilter("assessment")} type="button">Avaliações</button>
             <button className={filter === "demand" ? "active" : ""} onClick={() => setFilter("demand")} type="button">Tarefas</button>
+            <button className={filter === "institutional" ? "active" : ""} onClick={() => setFilter("institutional")} type="button">UnB</button>
           </div>
 
           <div className="calendar-navigation">
@@ -198,7 +238,7 @@ export default function CalendarPage() {
                   const outside = !sameMonth(date, viewMonth);
                   const selected = key === selectedDate;
                   const today = key === todayKey;
-                  const overdue = key < todayKey && dayEvents.some((event) => !event.completed);
+                  const overdue = key < todayKey && dayEvents.some((event) => event.kind !== "institutional" && !event.completed);
                   return (
                     <article
                       className={`calendar-day${outside ? " outside" : ""}${selected ? " selected" : ""}${today ? " today" : ""}`}
@@ -219,6 +259,8 @@ export default function CalendarPage() {
                             className={`calendar-event${event.completed ? " completed" : ""}`}
                             href={event.href}
                             key={event.id}
+                            rel={event.external ? "noreferrer" : undefined}
+                            target={event.external ? "_blank" : undefined}
                             title={`${event.subjectCode} · ${event.title}`}
                           >
                             <span className="calendar-event-dot" style={{ background: event.subjectColor }} />
@@ -245,12 +287,20 @@ export default function CalendarPage() {
             {selectedEvents.length ? (
               <div className="calendar-agenda-list">
                 {selectedEvents.map((event) => (
-                  <Link className={`calendar-agenda-event${event.completed ? " completed" : ""}`} href={event.href} key={event.id}>
+                  <Link
+                    className={`calendar-agenda-event${event.completed ? " completed" : ""}`}
+                    href={event.href}
+                    key={event.id}
+                    rel={event.external ? "noreferrer" : undefined}
+                    target={event.external ? "_blank" : undefined}
+                  >
                     <span className="calendar-agenda-accent" style={{ background: event.subjectColor }} />
                     <div className="calendar-agenda-icon">
                       {event.completed
                         ? <Check aria-hidden="true" size={17} />
-                        : event.kind === "assessment"
+                        : event.kind === "institutional"
+                          ? <Landmark aria-hidden="true" size={18} />
+                          : event.kind === "assessment"
                           ? <GraduationCap aria-hidden="true" size={18} />
                           : <ClipboardList aria-hidden="true" size={18} />}
                     </div>

@@ -17,18 +17,26 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Activity,
   CalendarDays,
   CalendarX2,
   BookOpenCheck,
   CircleAlert,
+  Database,
+  FilePenLine,
+  HardDrive,
   Home,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  RefreshCw,
   Settings,
+  Settings2,
+  SlidersHorizontal,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -37,8 +45,39 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useAppData } from "@/components/data-provider";
 import type { MaterialStorageUsage } from "@/lib/repositories/uniflow-repository";
+import {
+  DEFAULT_USER_PREFERENCES,
+  readUserPreferences,
+  writeUserPreferences,
+  type UserPreferences,
+} from "@/lib/user-preferences";
 import { SubjectModal } from "@/components/subject-modal";
 import type { Subject } from "@/types/domain";
+
+type SettingsSection = "preferences" | "data" | "account";
+
+function SettingsToggle({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      aria-checked={checked}
+      aria-label={label}
+      className={`settings-switch ${checked ? "active" : ""}`}
+      onClick={() => onChange(!checked)}
+      role="switch"
+      type="button"
+    >
+      <span />
+    </button>
+  );
+}
 
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -107,9 +146,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("preferences");
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [storageUsage, setStorageUsage] = useState<MaterialStorageUsage | null>(null);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [settingsSyncing, setSettingsSyncing] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const { demoMode, signOut, user } = useAuth();
   const {
     clearOperationError,
@@ -136,6 +179,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const storedPreferences = readUserPreferences();
+      setPreferences(storedPreferences);
+      if (!window.matchMedia("(max-width: 900px)").matches) {
+        setSidebarCollapsed(storedPreferences.sidebarInitiallyCollapsed);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("reduce-motion", preferences.reduceMotion);
+    return () => document.body.classList.remove("reduce-motion");
+  }, [preferences.reduceMotion]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function closeSettings(event: KeyboardEvent) {
+      if (event.key === "Escape") setSettingsOpen(false);
+    }
+    window.addEventListener("keydown", closeSettings);
+    return () => window.removeEventListener("keydown", closeSettings);
+  }, [settingsOpen]);
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -208,8 +276,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function openSettings() {
+    setSettingsSection("preferences");
+    setSettingsMessage(null);
     setSettingsOpen(true);
     void loadStorageStats();
+  }
+
+  function updatePreference<Key extends keyof UserPreferences>(key: Key, value: UserPreferences[Key]) {
+    const next = { ...preferences, [key]: value };
+    setPreferences(next);
+    writeUserPreferences(next);
+    if (key === "sidebarInitiallyCollapsed" && !window.matchMedia("(max-width: 900px)").matches) {
+      setSidebarCollapsed(Boolean(value));
+    }
+  }
+
+  async function syncSettingsData() {
+    setSettingsSyncing(true);
+    setSettingsMessage(null);
+    try {
+      await refresh(false);
+      await loadStorageStats();
+      setSettingsMessage({ text: "Dados sincronizados agora.", tone: "success" });
+    } catch (error) {
+      setSettingsMessage({
+        text: error instanceof Error ? error.message : "Não foi possível sincronizar agora.",
+        tone: "error",
+      });
+    } finally {
+      setSettingsSyncing(false);
+    }
   }
 
   async function handleRemoveSubject(subject: Subject) {
@@ -336,42 +432,209 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <SubjectModal open={subjectOpen} onClose={() => setSubjectOpen(false)} />
       {settingsOpen ? (
-        <div className="modal-backdrop">
-          <section className="modal form-stack compact-modal">
-            <div className="modal-header">
-              <h2>Configurações</h2>
-              <button className="icon-button" onClick={() => setSettingsOpen(false)} type="button">x</button>
-            </div>
-            <div className="settings-list">
-              <div>
-                <span>Conta</span>
-                <strong>{demoMode ? "Modo demo" : user?.email ?? "Usuário conectado"}</strong>
-              </div>
-              <div>
-                <span>Dados</span>
-                <strong>{demoMode ? "Salvos neste navegador" : "Sincronizados com Supabase"}</strong>
-              </div>
-              <section className="settings-storage-card">
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setSettingsOpen(false);
+          }}
+        >
+          <section aria-labelledby="settings-title" aria-modal="true" className="modal settings-modal" role="dialog">
+            <header className="settings-modal-header">
+              <div className="settings-modal-title">
+                <span><Settings2 aria-hidden="true" size={20} /></span>
                 <div>
-                  <span>Arquivos enviados</span>
-                  <strong>
-                    {storageLoading && !storageUsage
-                      ? "Calculando..."
-                      : storageUsage
-                        ? `${formatBytes(storageUsage.usedBytes)} de ${formatBytes(storageUsage.limitBytes)}`
-                        : "Indisponível"}
-                  </strong>
+                  <h2 id="settings-title">Configurações</h2>
+                  <p>Preferências e informações do seu UniFlow.</p>
                 </div>
-                <div className="settings-storage-bar">
-                  <span style={{ width: `${storagePercent}%` }} />
-                </div>
-                <small>
-                  {storageUsage ? `${storagePercent}% usado · ${storageUsage.fileCount} arquivos` : "Limite Free estimado: 1 GB de file storage"}
-                </small>
-                {storageError ? <small className="error-message">{storageError}</small> : null}
-              </section>
+              </div>
+              <button aria-label="Fechar configurações" className="icon-button" onClick={() => setSettingsOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="settings-modal-body">
+              <nav aria-label="Seções das configurações" className="settings-tabs">
+                <button className={settingsSection === "preferences" ? "active" : ""} onClick={() => setSettingsSection("preferences")} type="button">
+                  <SlidersHorizontal size={16} /><span>Preferências</span>
+                </button>
+                <button className={settingsSection === "data" ? "active" : ""} onClick={() => setSettingsSection("data")} type="button">
+                  <Database size={16} /><span>Dados</span>
+                </button>
+                <button className={settingsSection === "account" ? "active" : ""} onClick={() => setSettingsSection("account")} type="button">
+                  <UserRound size={16} /><span>Conta</span>
+                </button>
+              </nav>
+
+              <div className="settings-pane">
+                {settingsSection === "preferences" ? (
+                  <>
+                    <section className="settings-section">
+                      <header>
+                        <h3>Interface</h3>
+                        <p>Ajuste o comportamento geral para o seu jeito de usar o app.</p>
+                      </header>
+                      <div className="settings-option">
+                        <span className="settings-option-icon"><PanelLeftClose size={17} /></span>
+                        <div>
+                          <strong>Iniciar com o menu lateral recolhido</strong>
+                          <small>Libera mais espaço horizontal ao entrar no UniFlow.</small>
+                        </div>
+                        <SettingsToggle
+                          checked={preferences.sidebarInitiallyCollapsed}
+                          label="Iniciar com o menu lateral recolhido"
+                          onChange={(checked) => updatePreference("sidebarInitiallyCollapsed", checked)}
+                        />
+                      </div>
+                      <div className="settings-option">
+                        <span className="settings-option-icon"><Activity size={17} /></span>
+                        <div>
+                          <strong>Reduzir animações</strong>
+                          <small>Diminui transições e movimentos da interface.</small>
+                        </div>
+                        <SettingsToggle
+                          checked={preferences.reduceMotion}
+                          label="Reduzir animações"
+                          onChange={(checked) => updatePreference("reduceMotion", checked)}
+                        />
+                      </div>
+                    </section>
+
+                    <section className="settings-section">
+                      <header>
+                        <h3>Editor de PDF</h3>
+                        <p>Controle quanto espaço o painel de propriedades deve ocupar.</p>
+                      </header>
+                      <div className="settings-option">
+                        <span className="settings-option-icon"><FilePenLine size={17} /></span>
+                        <div>
+                          <strong>Painel ao abrir o editor</strong>
+                          <small>Em janelas estreitas ele sempre começa recolhido.</small>
+                        </div>
+                        <div aria-label="Estado inicial do painel de propriedades" className="settings-segmented" role="group">
+                          <button
+                            aria-pressed={preferences.pdfInspectorInitiallyOpen}
+                            className={preferences.pdfInspectorInitiallyOpen ? "active" : ""}
+                            onClick={() => updatePreference("pdfInspectorInitiallyOpen", true)}
+                            type="button"
+                          >Aberto</button>
+                          <button
+                            aria-pressed={!preferences.pdfInspectorInitiallyOpen}
+                            className={!preferences.pdfInspectorInitiallyOpen ? "active" : ""}
+                            onClick={() => updatePreference("pdfInspectorInitiallyOpen", false)}
+                            type="button"
+                          >Fechado</button>
+                        </div>
+                      </div>
+                      <div className="settings-option">
+                        <span className="settings-option-icon"><Settings2 size={17} /></span>
+                        <div>
+                          <strong>Abrir propriedades ao editar</strong>
+                          <small>Mostra o painel ao escolher uma ferramenta ou selecionar uma edição.</small>
+                        </div>
+                        <SettingsToggle
+                          checked={preferences.pdfInspectorAutoOpen}
+                          label="Abrir propriedades automaticamente ao editar"
+                          onChange={(checked) => updatePreference("pdfInspectorAutoOpen", checked)}
+                        />
+                      </div>
+                    </section>
+                  </>
+                ) : null}
+
+                {settingsSection === "data" ? (
+                  <>
+                    <section className="settings-section">
+                      <header>
+                        <h3>Resumo dos dados</h3>
+                        <p>Uma visão rápida do conteúdo atualmente sincronizado.</p>
+                      </header>
+                      <div className="settings-data-overview">
+                        <div><strong>{subjects.length}</strong><span>Matérias</span></div>
+                        <div><strong>{demands.length}</strong><span>Tarefas</span></div>
+                        <div><strong>{materials.length}</strong><span>Materiais</span></div>
+                      </div>
+                    </section>
+
+                    <section className="settings-section settings-storage-section">
+                      <header>
+                        <div>
+                          <HardDrive aria-hidden="true" size={17} />
+                          <h3>Arquivos enviados</h3>
+                        </div>
+                        <button aria-label="Atualizar uso do armazenamento" className="icon-button" disabled={storageLoading} onClick={() => void loadStorageStats()} title="Atualizar armazenamento" type="button">
+                          <RefreshCw className={storageLoading ? "spinning" : ""} size={16} />
+                        </button>
+                      </header>
+                      <div className="settings-storage-copy">
+                        <strong>
+                          {storageLoading && !storageUsage
+                            ? "Calculando..."
+                            : storageUsage
+                              ? `${formatBytes(storageUsage.usedBytes)} de ${formatBytes(storageUsage.limitBytes)}`
+                              : "Indisponível"}
+                        </strong>
+                        <span>{storageUsage ? `${storagePercent}% usado` : "Limite estimado do plano atual"}</span>
+                      </div>
+                      <div aria-label={`${storagePercent}% do armazenamento usado`} className="settings-storage-bar" role="progressbar" aria-valuemax={100} aria-valuemin={0} aria-valuenow={storagePercent}>
+                        <span style={{ width: `${storagePercent}%` }} />
+                      </div>
+                      <small>
+                        {storageUsage ? `${storageUsage.fileCount} arquivos armazenados` : "O uso será recalculado quando estiver disponível."}
+                      </small>
+                      {storageError ? <small className="error-message">{storageError}</small> : null}
+                    </section>
+
+                    <section className="settings-section">
+                      <div className="settings-sync-row">
+                        <span className="settings-option-icon"><Database size={17} /></span>
+                        <div>
+                          <strong>{demoMode ? "Dados deste navegador" : "Sincronização com Supabase"}</strong>
+                          <small>{demoMode ? "As alterações ficam neste dispositivo." : "Busca a versão mais recente dos seus dados sem apagar alterações."}</small>
+                        </div>
+                        <button className={`ghost-action ${settingsSyncing ? "is-loading" : ""}`} disabled={settingsSyncing} onClick={() => void syncSettingsData()} type="button">
+                          {settingsSyncing ? null : <RefreshCw size={15} />}
+                          <span>{settingsSyncing ? "Sincronizando..." : "Sincronizar agora"}</span>
+                        </button>
+                      </div>
+                      {settingsMessage ? <p className={`settings-message ${settingsMessage.tone}`} role="status">{settingsMessage.text}</p> : null}
+                    </section>
+                  </>
+                ) : null}
+
+                {settingsSection === "account" ? (
+                  <section className="settings-section settings-account-section">
+                    <header>
+                      <h3>Conta atual</h3>
+                      <p>Sessão usada para acessar e sincronizar o UniFlow.</p>
+                    </header>
+                    <div className="settings-account-profile">
+                      <span>{demoMode ? "D" : (user?.email?.charAt(0) ?? "U").toLocaleUpperCase("pt-BR")}</span>
+                      <div>
+                        <strong>{demoMode ? "Modo demonstração" : user?.email ?? "Usuário conectado"}</strong>
+                        <small>{demoMode ? "Dados locais neste navegador" : "Conta autenticada pelo Supabase"}</small>
+                      </div>
+                    </div>
+                    <div className="settings-account-row">
+                      <span>Persistência</span>
+                      <strong>{demoMode ? "Navegador atual" : "Nuvem"}</strong>
+                    </div>
+                    <div className="settings-account-row">
+                      <span>Sessão</span>
+                      <strong className="settings-online-status">Ativa</strong>
+                    </div>
+                    <button className="ghost-action danger settings-sign-out" onClick={() => void signOut()} type="button">
+                      <LogOut size={16} />
+                      <span>{demoMode ? "Sair do modo demo" : "Sair da conta"}</span>
+                    </button>
+                  </section>
+                ) : null}
+              </div>
             </div>
-            <button className="primary-button full" onClick={() => setSettingsOpen(false)} type="button">Fechar</button>
+
+            <footer className="settings-modal-footer">
+              <small>As preferências ficam salvas neste navegador.</small>
+              <button className="primary-button small" onClick={() => setSettingsOpen(false)} type="button">Concluído</button>
+            </footer>
           </section>
         </div>
       ) : null}

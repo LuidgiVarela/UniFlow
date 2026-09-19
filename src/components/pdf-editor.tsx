@@ -12,6 +12,8 @@ import {
   Highlighter,
   ImagePlus,
   MousePointer2,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Redo2,
   Save,
@@ -34,6 +36,12 @@ import {
   type ReactNode,
 } from "react";
 import { useAppData } from "@/components/data-provider";
+import {
+  DEFAULT_USER_PREFERENCES,
+  USER_PREFERENCES_CHANGED_EVENT,
+  readUserPreferences,
+  type UserPreferences,
+} from "@/lib/user-preferences";
 import type { Material } from "@/types/domain";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
@@ -482,6 +490,8 @@ export function PdfEditor() {
   const [drawThickness, setDrawThickness] = useState(2.5);
   const [hasCopiedAnnotation, setHasCopiedAnnotation] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(300);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorAutoOpen, setInspectorAutoOpen] = useState(DEFAULT_USER_PREFERENCES.pdfInspectorAutoOpen);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
   const [historyCursor, setHistoryCursor] = useState(0);
   const [historyLength, setHistoryLength] = useState(1);
@@ -572,6 +582,32 @@ export function PdfEditor() {
     getMaterialUrlRef.current = getMaterialUrl;
     materialRef.current = material;
   }, [getMaterialUrl, material]);
+
+  useEffect(() => {
+    const applyPreferences = (preferences: UserPreferences, initialize = false) => {
+      setInspectorAutoOpen(preferences.pdfInspectorAutoOpen);
+      if (initialize) {
+        setInspectorOpen(preferences.pdfInspectorInitiallyOpen && window.innerWidth >= 1180);
+      }
+    };
+    applyPreferences(readUserPreferences(), true);
+
+    function handlePreferencesChanged(event: Event) {
+      const preferences = event instanceof CustomEvent
+        ? event.detail as UserPreferences
+        : readUserPreferences();
+      applyPreferences(preferences);
+    }
+
+    window.addEventListener(USER_PREFERENCES_CHANGED_EVENT, handlePreferencesChanged);
+    return () => window.removeEventListener(USER_PREFERENCES_CHANGED_EVENT, handlePreferencesChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId || !inspectorAutoOpen) return;
+    const frame = window.requestAnimationFrame(() => setInspectorOpen(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [inspectorAutoOpen, selectedId]);
 
   useEffect(() => {
     if (appLoading) return;
@@ -970,6 +1006,13 @@ export function PdfEditor() {
     document.body.classList.add("is-resizing-pdf-inspector");
   }
 
+  function activateTool(nextTool: EditorTool) {
+    setTool(nextTool);
+    if (inspectorAutoOpen && nextTool !== "select" && nextTool !== "erase") {
+      setInspectorOpen(true);
+    }
+  }
+
   function pointFromEvent(event: ReactPointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     return {
@@ -1083,6 +1126,7 @@ export function PdfEditor() {
     event.stopPropagation();
     event.preventDefault();
     setSelectedId(annotation.id);
+    if (inspectorAutoOpen) setInspectorOpen(true);
     setPageNumber(annotation.pageIndex + 1);
     interactionRef.current = {
       kind: "move",
@@ -1098,6 +1142,7 @@ export function PdfEditor() {
   function beginResize(event: ReactPointerEvent, annotation: Exclude<Annotation, DrawAnnotation>) {
     event.stopPropagation();
     event.preventDefault();
+    if (inspectorAutoOpen) setInspectorOpen(true);
     interactionRef.current = {
       kind: "resize",
       annotationId: annotation.id,
@@ -1592,7 +1637,7 @@ export function PdfEditor() {
   }
 
   return (
-    <section className="pdf-editor-page" style={editorLayoutStyle}>
+    <section className={`pdf-editor-page ${inspectorOpen ? "inspector-open" : "inspector-collapsed"}`} style={editorLayoutStyle}>
       <header className="pdf-editor-header">
         <div className="pdf-editor-file">
           <FileText size={20} />
@@ -1651,7 +1696,7 @@ export function PdfEditor() {
             aria-pressed={tool === "select"}
             className={`pdf-tool-button ${tool === "select" ? "active" : ""}`}
             disabled={!editorReady}
-            onClick={() => setTool("select")}
+            onClick={() => activateTool("select")}
             title="Selecionar e mover"
             type="button"
           >
@@ -1661,7 +1706,7 @@ export function PdfEditor() {
             aria-pressed={tool === "text"}
             className={`pdf-tool-button ${tool === "text" ? "active" : ""}`}
             disabled={!editorReady}
-            onClick={() => setTool("text")}
+            onClick={() => activateTool("text")}
             title="Adicionar texto"
             type="button"
           >
@@ -1670,7 +1715,10 @@ export function PdfEditor() {
           <button
             className="pdf-tool-button"
             disabled={!editorReady}
-            onClick={() => imageInputRef.current?.click()}
+            onClick={() => {
+              if (inspectorAutoOpen) setInspectorOpen(true);
+              imageInputRef.current?.click();
+            }}
             title="Adicionar imagem"
             type="button"
           >
@@ -1680,7 +1728,7 @@ export function PdfEditor() {
             aria-pressed={tool === "highlight"}
             className={`pdf-tool-button ${tool === "highlight" ? "active" : ""}`}
             disabled={!editorReady}
-            onClick={() => setTool("highlight")}
+            onClick={() => activateTool("highlight")}
             title="Usar marca-texto"
             type="button"
           >
@@ -1690,7 +1738,7 @@ export function PdfEditor() {
             aria-pressed={tool === "draw"}
             className={`pdf-tool-button ${tool === "draw" ? "active" : ""}`}
             disabled={!editorReady}
-            onClick={() => setTool("draw")}
+            onClick={() => activateTool("draw")}
             title="Desenho livre"
             type="button"
           >
@@ -1700,7 +1748,7 @@ export function PdfEditor() {
             aria-pressed={tool === "erase"}
             className={`pdf-tool-button ${tool === "erase" ? "active" : ""}`}
             disabled={!editorReady}
-            onClick={() => setTool("erase")}
+            onClick={() => activateTool("erase")}
             title="Apagar edições adicionadas"
             type="button"
           >
@@ -1834,6 +1882,18 @@ export function PdfEditor() {
               <ZoomIn size={17} />
             </button>
           </div>
+
+          <div className="pdf-toolbar-group pdf-inspector-toggle">
+            <button
+              aria-expanded={inspectorOpen}
+              className={`icon-button ${inspectorOpen ? "active" : ""}`}
+              onClick={() => setInspectorOpen((current) => !current)}
+              title={inspectorOpen ? "Ocultar propriedades" : "Mostrar propriedades"}
+              type="button"
+            >
+              {inspectorOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+            </button>
+          </div>
         </div>
 
         <span aria-hidden className="pdf-toolbar-inspector-space" />
@@ -1900,9 +1960,14 @@ export function PdfEditor() {
               <span>Propriedades</span>
               <strong>{selectedAnnotation ? annotationLabel(selectedAnnotation) : "Nenhuma seleção"}</strong>
             </div>
-            <button className="icon-button danger" disabled={!selectedAnnotation} onClick={removeSelected} title="Excluir item selecionado" type="button">
-              <Trash2 size={16} />
-            </button>
+            <div className="pdf-inspector-header-actions">
+              <button className="icon-button danger" disabled={!selectedAnnotation} onClick={removeSelected} title="Excluir item selecionado" type="button">
+                <Trash2 size={16} />
+              </button>
+              <button className="icon-button" onClick={() => setInspectorOpen(false)} title="Ocultar propriedades" type="button">
+                <PanelRightClose size={17} />
+              </button>
+            </div>
           </div>
 
           {selectedAnnotation?.type === "text" ? (

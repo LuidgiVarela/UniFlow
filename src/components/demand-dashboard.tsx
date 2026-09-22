@@ -1,11 +1,13 @@
 "use client";
 
-import { Check, NotebookPen, Plus, Star, Trash2 } from "lucide-react";
+import { Check, NotebookPen, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
 import { useAppData } from "@/components/data-provider";
 import type { Demand, DemandQuestion, DemandQuestionDifficulty, DemandQuestionItem } from "@/types/domain";
+
+type QuestionNumberingMode = "sequential" | "custom";
 
 const difficulties: Array<{ value: DemandQuestionDifficulty; label: string }> = [
   { value: "facil", label: "Fácil" },
@@ -28,6 +30,19 @@ function displayQuestionLabel(label: string) {
   return label.replace(/^Questao\b/i, "Questão");
 }
 
+function questionIdentifier(label: string) {
+  return displayQuestionLabel(label).replace(/^Questão\s*/i, "").trim();
+}
+
+function normalizeQuestionLabel(value: string) {
+  const identifier = questionIdentifier(value);
+  return identifier ? `Questão ${identifier}` : "";
+}
+
+function splitLabels(value: string) {
+  return value.split(/[,;\n]+/).map((label) => label.trim()).filter(Boolean);
+}
+
 export function DemandDashboard({ demand }: { demand: Demand }) {
   const {
     demandQuestionItems,
@@ -37,12 +52,17 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     upsertDemandQuestion,
     upsertDemandQuestionItem,
   } = useAppData();
+  const [numberingMode, setNumberingMode] = useState<QuestionNumberingMode>("sequential");
   const [questionCount, setQuestionCount] = useState(demand.total_items ?? 21);
   const [questionStart, setQuestionStart] = useState<0 | 1>(1);
+  const [customQuestionLabels, setCustomQuestionLabels] = useState("");
   const [itemPattern, setItemPattern] = useState("a,b,c,d");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [questionLabelDraft, setQuestionLabelDraft] = useState("");
+  const [savingQuestionLabel, setSavingQuestionLabel] = useState(false);
 
   const questions = useMemo(
     () =>
@@ -87,18 +107,35 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
       percent: difficultyItems.length ? Math.round((difficultyDone / difficultyItems.length) * 100) : 0,
     };
   });
-  const hasQuestionZero = questions.some((question) => {
-    const numberMatch = question.label.match(/(\d+)\s*$/);
-    return question.order_index === 0 || Number(numberMatch?.[1]) === 0;
-  });
+  const hasQuestionZero = questions.some((question) => questionIdentifier(question.label) === "0");
 
   async function submitGenerator(event: React.FormEvent) {
     event.preventDefault();
-    const labels = itemPattern.split(",");
+    const labels = splitLabels(itemPattern);
+    const requestedLabels = numberingMode === "custom" ? splitLabels(customQuestionLabels) : undefined;
+    if (!labels.length) {
+      setError("Informe ao menos um item para cada questão.");
+      return;
+    }
+    if (numberingMode === "custom" && !requestedLabels?.length) {
+      setError("Informe os identificadores das questões.");
+      return;
+    }
+    if (numberingMode === "sequential" && (!Number.isFinite(questionCount) || questionCount < 1)) {
+      setError("Informe uma quantidade válida de questões.");
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
-      await generateDemandQuestions(demand.id, questionCount, labels, questions.length ? undefined : questionStart);
+      await generateDemandQuestions(
+        demand.id,
+        requestedLabels?.length ?? questionCount,
+        labels,
+        numberingMode === "sequential" && !questions.length ? questionStart : undefined,
+        requestedLabels,
+      );
+      if (requestedLabels) setCustomQuestionLabels("");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Não foi possível gerar as questões.");
     } finally {
@@ -107,7 +144,11 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
   }
 
   async function addQuestionZero() {
-    const labels = itemPattern.split(",");
+    const labels = splitLabels(itemPattern);
+    if (!labels.length) {
+      setError("Informe ao menos um item para a Questão 0.");
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
@@ -121,6 +162,29 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
 
   async function updateQuestion(question: DemandQuestion, patch: Partial<DemandQuestion>) {
     await upsertDemandQuestion({ ...question, ...patch });
+  }
+
+  async function saveQuestionLabel(question: DemandQuestion) {
+    const nextLabel = normalizeQuestionLabel(questionLabelDraft);
+    if (!nextLabel) {
+      setError("Informe o identificador da questão.");
+      return;
+    }
+    if (questions.some((item) => item.id !== question.id && normalizeQuestionLabel(item.label).toLocaleLowerCase("pt-BR") === nextLabel.toLocaleLowerCase("pt-BR"))) {
+      setError(`${nextLabel} já existe nesta lista.`);
+      return;
+    }
+
+    setSavingQuestionLabel(true);
+    setError(null);
+    try {
+      await updateQuestion(question, { label: nextLabel });
+      setEditingQuestionId(null);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível renomear a questão.");
+    } finally {
+      setSavingQuestionLabel(false);
+    }
   }
 
   async function addItem(question: DemandQuestion, items: DemandQuestionItem[]) {
@@ -193,10 +257,38 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         </div>
       </section>
 
-      <form className={`task-generator ${questions.length ? "" : "with-question-start"}`} onSubmit={submitGenerator}>
-        <label>Questões<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
-        <label>Itens iniciais<input value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
-        {!questions.length ? (
+      <form
+        className={`task-generator ${numberingMode === "custom" ? "with-custom-numbering" : questions.length ? "" : "with-question-start"}`}
+        onSubmit={submitGenerator}
+      >
+        <div className="question-numbering-field">
+          <span>Numeração</span>
+          <div aria-label="Formato da numeração" className="question-numbering-control" role="group">
+            <button
+              aria-pressed={numberingMode === "sequential"}
+              className={numberingMode === "sequential" ? "active" : ""}
+              onClick={() => setNumberingMode("sequential")}
+              type="button"
+            >
+              Sequencial
+            </button>
+            <button
+              aria-pressed={numberingMode === "custom"}
+              className={numberingMode === "custom" ? "active" : ""}
+              onClick={() => setNumberingMode("custom")}
+              type="button"
+            >
+              Personalizada
+            </button>
+          </div>
+        </div>
+        {numberingMode === "sequential" ? (
+          <label>Quantidade<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
+        ) : (
+          <label className="custom-question-labels">Questões da lista<input placeholder="1.1, 1.2, 1.3" value={customQuestionLabels} onChange={(event) => setCustomQuestionLabels(event.target.value)} /></label>
+        )}
+        <label>Itens por questão<input placeholder="a, b, c" value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
+        {numberingMode === "sequential" && !questions.length ? (
           <div className="question-start-field">
             <span>Primeira questão</span>
             <div aria-label="Número da primeira questão" className="question-start-control" role="group">
@@ -233,10 +325,45 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
           const questionPercent = items.length ? Math.round((done / items.length) * 100) : 0;
           return (
             <article className={`question-card ${question.important ? "important" : ""}`} key={question.id}>
-              <div className="question-card-header">
+              <div className={`question-card-header ${editingQuestionId === question.id ? "editing-label" : ""}`}>
                 <div>
                   <div className="question-title-line">
-                    <strong>{displayQuestionLabel(question.label)}</strong>
+                    {editingQuestionId === question.id ? (
+                      <form className="question-label-editor" onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveQuestionLabel(question);
+                      }}>
+                        <input
+                          aria-label="Identificador da questão"
+                          autoFocus
+                          onChange={(event) => setQuestionLabelDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") setEditingQuestionId(null);
+                          }}
+                          value={questionLabelDraft}
+                        />
+                        <button aria-label="Salvar identificador" disabled={savingQuestionLabel} title="Salvar" type="submit">
+                          <Check size={14} />
+                        </button>
+                        <button aria-label="Cancelar edição" disabled={savingQuestionLabel} onClick={() => setEditingQuestionId(null)} title="Cancelar" type="button">
+                          <X size={14} />
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        className="question-label-button"
+                        onClick={() => {
+                          setQuestionLabelDraft(questionIdentifier(question.label));
+                          setEditingQuestionId(question.id);
+                          setError(null);
+                        }}
+                        title="Renomear questão"
+                        type="button"
+                      >
+                        <strong>{displayQuestionLabel(question.label)}</strong>
+                        <Pencil size={12} />
+                      </button>
+                    )}
                     <button
                       aria-label={question.important ? "Remover marca de questão importante" : "Marcar como questão importante"}
                       className={`question-star-button ${question.important ? "active" : ""}`}

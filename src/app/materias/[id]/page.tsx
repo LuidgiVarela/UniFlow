@@ -18,6 +18,7 @@ import {
   FolderPlus,
   Link as LinkIcon,
   Plus,
+  Save,
   TextCursorInput,
   Trash2,
   X,
@@ -168,6 +169,7 @@ export default function SubjectDetailPage() {
     reorderMaterials,
     upsertMaterial,
     upsertMaterialFolder,
+    upsertSubject,
     upsertSubjectClassProgress,
   } = useAppData();
   const tab = tabs.find((item) => item.query === searchParams.get("aba"))?.id ?? "overview";
@@ -204,12 +206,15 @@ export default function SubjectDetailPage() {
   const [classProgressNote, setClassProgressNote] = useState("");
   const [classProgressError, setClassProgressError] = useState<string | null>(null);
   const [savingClassProgress, setSavingClassProgress] = useState(false);
+  const [overviewNoteDraft, setOverviewNoteDraft] = useState("");
+  const [overviewNoteStatus, setOverviewNoteStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
   const [materialTreeWidth, setMaterialTreeWidth] = useState(MATERIAL_TREE_DEFAULT_WIDTH);
   const breadcrumbRef = useRef<HTMLElement | null>(null);
   const folderActionsRef = useRef<HTMLDetailsElement | null>(null);
   const materialBrowserRef = useRef<HTMLDivElement | null>(null);
   const materialTreeWidthRef = useRef(MATERIAL_TREE_DEFAULT_WIDTH);
   const materialTreeResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const overviewNoteSubjectRef = useRef<string | null>(null);
   const subject = subjects.find((item) => item.id === params.id);
 
   const subjectDemands = useMemo(
@@ -236,6 +241,20 @@ export default function SubjectDetailPage() {
     [materialFolders, params.id],
   );
   const folderById = useMemo(() => new Map(subjectFolders.map((folder) => [folder.id, folder])), [subjectFolders]);
+
+  useEffect(() => {
+    if (!subject) return;
+    if (overviewNoteSubjectRef.current !== subject.id) {
+      overviewNoteSubjectRef.current = subject.id;
+      void Promise.resolve().then(() => {
+        setOverviewNoteDraft(subject.notes ?? "");
+        setOverviewNoteStatus("idle");
+      });
+      return;
+    }
+    if (["dirty", "saving", "error"].includes(overviewNoteStatus)) return;
+    void Promise.resolve().then(() => setOverviewNoteDraft(subject.notes ?? ""));
+  }, [overviewNoteStatus, subject]);
 
   useEffect(() => {
     function handlePopState(event: PopStateEvent) {
@@ -423,6 +442,23 @@ export default function SubjectDetailPage() {
   const classProgressMaterial = classProgress?.material_id
     ? subjectMaterials.find((material) => material.id === classProgress.material_id) ?? null
     : null;
+
+  async function saveOverviewNote() {
+    if (!subject) return;
+    const nextNote = overviewNoteDraft.trim() ? overviewNoteDraft : null;
+    if ((subject.notes ?? "") === (nextNote ?? "")) {
+      setOverviewNoteStatus("saved");
+      return;
+    }
+
+    setOverviewNoteStatus("saving");
+    try {
+      await upsertSubject({ ...subject, notes: nextNote });
+      setOverviewNoteStatus("saved");
+    } catch {
+      setOverviewNoteStatus("error");
+    }
+  }
 
   function assessmentTopicsText(assessment: Assessment) {
     const names = assessmentTopics
@@ -1220,7 +1256,7 @@ export default function SubjectDetailPage() {
         <div>
           <p className="subject-kicker" style={{ color: subject.color }}>{subject.code}</p>
           <h1>{subject.name}</h1>
-          {subject.notes ? <p className="subject-note">{subject.notes}</p> : null}
+          {subject.notes && tab !== "overview" ? <p className="subject-note">{subject.notes}</p> : null}
         </div>
         <button className="ghost-action" onClick={() => setEditSubjectOpen(true)} type="button">
           <Edit size={16} />Editar
@@ -1244,6 +1280,38 @@ export default function SubjectDetailPage() {
       {tab === "overview" ? (
         <Panel className="plain-section">
           <div className="subject-overview">
+            <section className="subject-quick-note">
+              <div className="subject-quick-note-header">
+                <h2>Anotações rápidas</h2>
+                <div>
+                  <span aria-live="polite" className={`subject-note-save-status ${overviewNoteStatus}`}>
+                    {overviewNoteStatus === "dirty" ? "Não salvo" : null}
+                    {overviewNoteStatus === "saving" ? "Salvando..." : null}
+                    {overviewNoteStatus === "saved" ? "Salvo" : null}
+                    {overviewNoteStatus === "error" ? "Erro ao salvar" : null}
+                  </span>
+                  <button
+                    className={`ghost-action compact ${overviewNoteStatus === "saving" ? "is-loading" : ""}`}
+                    disabled={overviewNoteStatus === "saving" || (subject.notes ?? "") === (overviewNoteDraft.trim() ? overviewNoteDraft : "")}
+                    onClick={() => void saveOverviewNote()}
+                    type="button"
+                  >
+                    {overviewNoteStatus === "saving" ? null : <Save size={15} />}
+                    Salvar
+                  </button>
+                </div>
+              </div>
+              <textarea
+                aria-label="Anotações rápidas da matéria"
+                onChange={(event) => {
+                  setOverviewNoteDraft(event.target.value);
+                  setOverviewNoteStatus("dirty");
+                }}
+                placeholder="Hoje fiz... Amanhã focar em..."
+                rows={3}
+                value={overviewNoteDraft}
+              />
+            </section>
             <section>
               <h2>Próximo prazo</h2>
               {nextTask ? (

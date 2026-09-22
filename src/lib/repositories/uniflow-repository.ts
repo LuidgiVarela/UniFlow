@@ -360,9 +360,9 @@ export async function deleteDemandQuestionItem(id: string) {
   if (error) throw error;
 }
 
-function demandQuestionNumber(question: Pick<DemandQuestion, "label" | "order_index">) {
-  const match = question.label.match(/(\d+)\s*$/);
-  return match ? Number(match[1]) : question.order_index;
+function demandQuestionNumber(question: Pick<DemandQuestion, "label">) {
+  const match = question.label.trim().match(/^Quest(?:ão|ao)\s+(\d+)$/i);
+  return match ? Number(match[1]) : null;
 }
 
 function demandQuestionStart(
@@ -371,10 +371,54 @@ function demandQuestionStart(
   questionCount: number,
 ) {
   if (!existingQuestions.length) return requestedStart ?? 1;
-  const numbers = existingQuestions.map(demandQuestionNumber).filter(Number.isFinite);
+  const numbers = existingQuestions
+    .map(demandQuestionNumber)
+    .filter((number): number is number => number !== null);
   if (requestedStart === 0 && numbers.includes(0)) return null;
   if (requestedStart === 0 && questionCount === 1) return 0;
   return Math.max(0, ...numbers) + 1;
+}
+
+function normalizeDemandQuestionLabel(value: string) {
+  const identifier = value.trim().replace(/^Quest(?:ão|ao)\s*/i, "").trim();
+  return identifier ? `Questão ${identifier}` : "";
+}
+
+function demandQuestionBlueprints(
+  existingQuestions: Array<Pick<DemandQuestion, "label" | "order_index">>,
+  questionCount: number,
+  requestedStart: 0 | 1 | undefined,
+  requestedLabels: string[] | undefined,
+) {
+  const explicitLabels = (requestedLabels ?? [])
+    .map(normalizeDemandQuestionLabel)
+    .filter(Boolean);
+
+  if (explicitLabels.length) {
+    const existingKeys = new Set(
+      existingQuestions.map((question) => normalizeDemandQuestionLabel(question.label).toLocaleLowerCase("pt-BR")),
+    );
+    const requestedKeys = new Set<string>();
+    for (const label of explicitLabels) {
+      const key = label.toLocaleLowerCase("pt-BR");
+      if (existingKeys.has(key) || requestedKeys.has(key)) {
+        throw new Error(`${label} já existe nesta lista.`);
+      }
+      requestedKeys.add(key);
+    }
+
+    const nextOrder = existingQuestions.length
+      ? Math.max(...existingQuestions.map((question) => question.order_index)) + 1
+      : 1;
+    return explicitLabels.map((label, index) => ({ label, order_index: nextOrder + index }));
+  }
+
+  const startNumber = demandQuestionStart(existingQuestions, requestedStart, questionCount);
+  if (startNumber === null) return [];
+  return Array.from({ length: questionCount }, (_, index) => ({
+    label: `Questão ${startNumber + index}`,
+    order_index: startNumber + index,
+  }));
 }
 
 export async function generateDemandQuestionSet(
@@ -382,24 +426,25 @@ export async function generateDemandQuestionSet(
   questionCount: number,
   itemLabels: string[],
   requestedStart?: 0 | 1,
+  requestedLabels?: string[],
 ) {
   const cleanCount = Math.max(0, Math.floor(questionCount));
   const cleanLabels = itemLabels.map((label) => label.trim()).filter(Boolean);
-  if (!cleanCount || !cleanLabels.length) return;
+  if ((!cleanCount && !requestedLabels?.length) || !cleanLabels.length) return;
 
   if (!hasSupabaseEnv || !supabase) {
     const data = readDemoData();
     const existingQuestions = data.demandQuestions.filter((question) => question.demand_id === demandId);
-    const startNumber = demandQuestionStart(existingQuestions, requestedStart, cleanCount);
-    if (startNumber === null) return;
-    const questions: DemandQuestion[] = Array.from({ length: cleanCount }, (_, index) => ({
+    const blueprints = demandQuestionBlueprints(existingQuestions, cleanCount, requestedStart, requestedLabels);
+    if (!blueprints.length) return;
+    const questions: DemandQuestion[] = blueprints.map((blueprint) => ({
       id: crypto.randomUUID(),
       demand_id: demandId,
-      label: `Questão ${startNumber + index}`,
+      label: blueprint.label,
       difficulty: "media",
       important: false,
       notes: "",
-      order_index: startNumber + index,
+      order_index: blueprint.order_index,
       created_at: new Date().toISOString(),
     }));
     const items: DemandQuestionItem[] = questions.flatMap((question) =>
@@ -427,17 +472,17 @@ export async function generateDemandQuestionSet(
     .eq("user_id", user_id);
   if (questionsError) throw questionsError;
 
-  const startNumber = demandQuestionStart(existingQuestions ?? [], requestedStart, cleanCount);
-  if (startNumber === null) return;
-  const questions = Array.from({ length: cleanCount }, (_, index) => ({
+  const blueprints = demandQuestionBlueprints(existingQuestions ?? [], cleanCount, requestedStart, requestedLabels);
+  if (!blueprints.length) return;
+  const questions = blueprints.map((blueprint) => ({
     id: crypto.randomUUID(),
     user_id,
     demand_id: demandId,
-    label: `Questão ${startNumber + index}`,
+    label: blueprint.label,
     difficulty: "media",
     important: false,
     notes: "",
-    order_index: startNumber + index,
+    order_index: blueprint.order_index,
     created_at: new Date().toISOString(),
   }));
   const insertedQuestions = await supabase.from("demand_questions").insert(questions).select();

@@ -78,6 +78,7 @@ type DataContextValue = AppData & {
     questionCount: number,
     itemLabels: string[],
     requestedStart?: 0 | 1,
+    requestedLabels?: string[],
   ) => Promise<void>;
   upsertTopic: (topic: Topic) => Promise<void>;
   removeTopic: (id: string) => Promise<void>;
@@ -356,8 +357,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
         });
       },
-      async generateDemandQuestions(demandId, questionCount, itemLabels, requestedStart) {
-        await generateDemandQuestionSet(demandId, questionCount, itemLabels, requestedStart);
+      async generateDemandQuestions(demandId, questionCount, itemLabels, requestedStart, requestedLabels) {
+        await generateDemandQuestionSet(demandId, questionCount, itemLabels, requestedStart, requestedLabels);
         await refresh(false);
       },
       async upsertTopic(topic) {

@@ -32,6 +32,7 @@
     "pdfjs-dist": "^5.4.149",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-easy-crop": "^6.2.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {

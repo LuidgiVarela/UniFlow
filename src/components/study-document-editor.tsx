@@ -8,6 +8,7 @@ import { TableKit } from "@tiptap/extension-table";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyleKit } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
+import { NodeSelection } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import {
   AlignCenter,
@@ -19,7 +20,9 @@ import {
   Check,
   Code2,
   Columns3,
+  Crop,
   FileDown,
+  GripVertical,
   Highlighter,
   ImagePlus,
   IndentDecrease,
@@ -30,6 +33,7 @@ import {
   ListOrdered,
   ListTree,
   LoaderCircle,
+  Maximize2,
   Minus,
   PanelLeft,
   Plus,
@@ -55,6 +59,10 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import {
+  StudyImageCropDialog,
+  type CroppedStudyImage,
+} from "@/components/study-image-crop-dialog";
 import { loadStudyDocument, saveStudyDocument } from "@/lib/repositories/uniflow-repository";
 import type { Demand, StudyDocument, Subject } from "@/types/domain";
 
@@ -69,6 +77,16 @@ type SaveStatus = "loading" | "dirty" | "saving" | "saved" | "local";
 type LocalStudyDocument = {
   document: StudyDocument;
   savedAt: string;
+};
+
+type ImageAlignment = "left" | "center" | "right";
+
+type ImageCropTarget = {
+  alt: string;
+  displayWidth: number;
+  originalAspect: number;
+  position: number;
+  src: string;
 };
 
 const AUTOSAVE_DELAY_MS = 900;
@@ -150,6 +168,23 @@ const BlockIndent = Extension.create({
   },
 });
 
+const ImageLayout = Extension.create({
+  name: "imageLayout",
+
+  addGlobalAttributes() {
+    return [{
+      types: ["image"],
+      attributes: {
+        align: {
+          default: "center",
+          parseHTML: (element) => element.getAttribute("data-image-align") ?? "center",
+          renderHTML: (attributes) => ({ "data-image-align": attributes.align ?? "center" }),
+        },
+      },
+    }];
+  },
+});
+
 const editorExtensions = [
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
@@ -173,6 +208,7 @@ const editorExtensions = [
       alwaysPreserveAspectRatio: true,
     },
   }),
+  ImageLayout,
   TableKit.configure({
     table: {
       allowTableNodeSelection: true,
@@ -382,6 +418,41 @@ function optimizeImage(file: File) {
   });
 }
 
+function imageElementAt(editor: Editor, position: number) {
+  const dom = editor.view.nodeDOM(position);
+  if (dom instanceof HTMLImageElement) return dom;
+  return dom instanceof HTMLElement ? dom.querySelector("img") : null;
+}
+
+function selectedImageContext(editor: Editor | null) {
+  if (!editor) return null;
+  const { selection } = editor.state;
+  if (!(selection instanceof NodeSelection) || selection.node.type.name !== "image") return null;
+  const element = imageElementAt(editor, selection.from);
+  if (!element) return null;
+  return {
+    attrs: selection.node.attrs as Record<string, unknown>,
+    element,
+    position: selection.from,
+  };
+}
+
+function selectedImageWidthPercent(editor: Editor, element: HTMLImageElement) {
+  const editorWidth = editor.view.dom.clientWidth;
+  if (!editorWidth) return 100;
+  const imageWidth = element.offsetWidth || element.naturalWidth;
+  return Math.max(15, Math.min(100, Math.round(imageWidth / editorWidth * 100)));
+}
+
+function imageDimensions(src: string) {
+  return new Promise<{ height: number; width: number }>((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve({ height: image.naturalHeight, width: image.naturalWidth });
+    image.onerror = () => reject(new Error("A imagem selecionada não pôde ser aberta."));
+    image.src = src;
+  });
+}
+
 function ToolbarButton({
   active = false,
   children,
@@ -431,6 +502,7 @@ export function StudyDocumentEditor({
   const [wordCount, setWordCount] = useState(0);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageCropTarget, setImageCropTarget] = useState<ImageCropTarget | null>(null);
   const [zoom, setZoom] = useState(100);
   const [zoomInput, setZoomInput] = useState("100");
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
@@ -438,6 +510,8 @@ export function StudyDocumentEditor({
   const [tableMenuPosition, setTableMenuPosition] = useState({ top: 108, left: 12 });
   const [, refreshToolbar] = useReducer((value: number) => value + 1, 0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const replaceImageInputRef = useRef<HTMLInputElement>(null);
+  const replaceImagePositionRef = useRef<number | null>(null);
   const tableControlRef = useRef<HTMLDivElement>(null);
   const documentRef = useRef<StudyDocument | null>(null);
   const titleRef = useRef(defaultTitle);
@@ -791,23 +865,137 @@ export function StudyDocumentEditor({
     selectedChain()?.extendMarkRange("link").setLink({ href }).run();
   }
 
-  async function handleImage(file?: File) {
+  async function handleImage(file?: File, replacePosition: number | null = null) {
     if (!editor || !file) return;
     if (file.size > 8 * 1024 * 1024) {
       setSyncError("Escolha uma imagem com até 8 MB.");
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      if (replaceImageInputRef.current) replaceImageInputRef.current.value = "";
+      replaceImagePositionRef.current = null;
       return;
     }
     setImageBusy(true);
     setSyncError(null);
     try {
       const src = await optimizeImage(file);
-      selectedChain()?.setImage({ src, alt: file.name, title: file.name }).run();
+      if (replacePosition !== null && editor.state.doc.nodeAt(replacePosition)?.type.name === "image") {
+        const currentElement = imageElementAt(editor, replacePosition);
+        const currentWidth = currentElement?.offsetWidth || editor.view.dom.clientWidth;
+        const dimensions = await imageDimensions(src);
+        const width = Math.max(80, Math.min(editor.view.dom.clientWidth, currentWidth));
+        const height = Math.round(width * dimensions.height / dimensions.width);
+        editor
+          .chain()
+          .focus()
+          .setNodeSelection(replacePosition)
+          .updateAttributes("image", { alt: file.name, height, src, title: file.name, width })
+          .run();
+        window.requestAnimationFrame(() => {
+          const element = imageElementAt(editor, replacePosition);
+          if (!element) return;
+          element.style.width = `${width}px`;
+          element.style.height = `${height}px`;
+        });
+      } else {
+        selectedChain()?.setImage({ src, alt: file.name, title: file.name }).run();
+      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : "Não foi possível adicionar a imagem.");
     } finally {
       setImageBusy(false);
       if (imageInputRef.current) imageInputRef.current.value = "";
+      if (replaceImageInputRef.current) replaceImageInputRef.current.value = "";
+      replaceImagePositionRef.current = null;
     }
+  }
+
+  function setSelectedImageWidth(percent: number) {
+    const context = selectedImageContext(editor);
+    if (!editor || !context) return;
+    const nextPercent = Math.max(15, Math.min(100, Math.round(percent)));
+    const width = Math.max(80, Math.round(editor.view.dom.clientWidth * nextPercent / 100));
+    const measuredRatio = context.element.naturalWidth > 0 && context.element.naturalHeight > 0
+      ? context.element.naturalWidth / context.element.naturalHeight
+      : context.element.offsetWidth / Math.max(1, context.element.offsetHeight);
+    const naturalRatio = Number.isFinite(measuredRatio) && measuredRatio > 0 ? measuredRatio : 1;
+    const height = Math.max(1, Math.round(width / naturalRatio));
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(context.position)
+      .updateAttributes("image", { height, width })
+      .run();
+    context.element.style.width = `${width}px`;
+    context.element.style.height = `${height}px`;
+  }
+
+  function setSelectedImageAlignment(align: ImageAlignment) {
+    const context = selectedImageContext(editor);
+    if (!editor || !context) return;
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(context.position)
+      .updateAttributes("image", { align })
+      .run();
+  }
+
+  function resetSelectedImageSize() {
+    const context = selectedImageContext(editor);
+    if (!editor || !context) return;
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(context.position)
+      .updateAttributes("image", { height: null, width: null })
+      .run();
+    context.element.style.removeProperty("height");
+    context.element.style.removeProperty("width");
+  }
+
+  function openImageCrop() {
+    const context = selectedImageContext(editor);
+    if (!context || typeof context.attrs.src !== "string") return;
+    const naturalWidth = context.element.naturalWidth || context.element.offsetWidth;
+    const naturalHeight = context.element.naturalHeight || context.element.offsetHeight;
+    setImageCropTarget({
+      alt: typeof context.attrs.alt === "string" ? context.attrs.alt : "Imagem do caderno",
+      displayWidth: context.element.offsetWidth,
+      originalAspect: naturalWidth / Math.max(1, naturalHeight),
+      position: context.position,
+      src: context.attrs.src,
+    });
+  }
+
+  function applyImageCrop(result: CroppedStudyImage) {
+    if (!editor || !imageCropTarget) return;
+    const { position } = imageCropTarget;
+    if (editor.state.doc.nodeAt(position)?.type.name !== "image") {
+      setImageCropTarget(null);
+      return;
+    }
+    const width = Math.max(80, Math.min(editor.view.dom.clientWidth, imageCropTarget.displayWidth));
+    const height = Math.max(1, Math.round(width * result.height / result.width));
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(position)
+      .updateAttributes("image", { height, src: result.src, width })
+      .run();
+    window.requestAnimationFrame(() => {
+      const element = imageElementAt(editor, position);
+      if (!element) return;
+      element.style.width = `${width}px`;
+      element.style.height = `${height}px`;
+    });
+    setImageCropTarget(null);
+  }
+
+  function openImageReplacement() {
+    const context = selectedImageContext(editor);
+    if (!context) return;
+    replaceImagePositionRef.current = context.position;
+    replaceImageInputRef.current?.click();
   }
 
   async function exportPdf() {
@@ -835,6 +1023,11 @@ export function StudyDocumentEditor({
   const fontFamilyValue = uniformTextStyleAttribute(editor, "fontFamily", "Arial, sans-serif");
   const fontSizeValue = uniformTextStyleAttribute(editor, "fontSize", "16px").replace("px", "");
   const lineHeightValue = uniformTextStyleAttribute(editor, "lineHeight", "1.5");
+  const selectedImage = selectedImageContext(editor);
+  const imageAlignment = (selectedImage?.attrs.align ?? "center") as ImageAlignment;
+  const imageWidthPercent = editor && selectedImage
+    ? selectedImageWidthPercent(editor, selectedImage.element)
+    : 100;
 
   return (
     <section className="study-document-page">
@@ -905,6 +1098,62 @@ export function StudyDocumentEditor({
           </label>
           <ToolbarButton disabled={zoom >= MAX_ZOOM} label="Aumentar zoom" onClick={() => applyZoom(zoom + ZOOM_STEP)}><ZoomIn size={17} /></ToolbarButton>
         </div>
+        {selectedImage ? (
+          <>
+            <div className="study-toolbar-group study-image-context-label" title="Arraste a imagem no documento para movê-la">
+              <GripVertical size={16} />
+              <span>Imagem</span>
+            </div>
+            <div className="study-toolbar-group">
+              <label className="study-image-size-control" title="Largura da imagem">
+                <Maximize2 size={16} />
+                <input
+                  aria-label="Largura da imagem"
+                  max="100"
+                  min="15"
+                  onChange={(event) => setSelectedImageWidth(Number(event.target.value))}
+                  type="range"
+                  value={imageWidthPercent}
+                />
+                <input
+                  aria-label="Largura da imagem em porcentagem"
+                  className="study-image-size-number"
+                  max="100"
+                  min="15"
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value)) setSelectedImageWidth(value);
+                  }}
+                  onFocus={(event) => event.currentTarget.select()}
+                  type="number"
+                  value={imageWidthPercent}
+                />
+                <span>%</span>
+              </label>
+            </div>
+            <div className="study-toolbar-group">
+              <ToolbarButton active={imageAlignment === "left"} label="Alinhar imagem à esquerda" onClick={() => setSelectedImageAlignment("left")}><AlignLeft size={17} /></ToolbarButton>
+              <ToolbarButton active={imageAlignment === "center"} label="Centralizar imagem" onClick={() => setSelectedImageAlignment("center")}><AlignCenter size={17} /></ToolbarButton>
+              <ToolbarButton active={imageAlignment === "right"} label="Alinhar imagem à direita" onClick={() => setSelectedImageAlignment("right")}><AlignRight size={17} /></ToolbarButton>
+            </div>
+            <div className="study-toolbar-group">
+              <ToolbarButton label="Recortar imagem" onClick={openImageCrop}><Crop size={17} /></ToolbarButton>
+              <ToolbarButton disabled={imageBusy} label="Substituir imagem" onClick={openImageReplacement}>
+                {imageBusy ? <LoaderCircle className="spin-icon" size={17} /> : <ImagePlus size={17} />}
+              </ToolbarButton>
+              <ToolbarButton label="Restaurar tamanho original" onClick={resetSelectedImageSize}><Maximize2 size={17} /></ToolbarButton>
+              <ToolbarButton label="Excluir imagem" onClick={() => editor?.chain().focus().deleteSelection().run()}><Trash2 size={17} /></ToolbarButton>
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                className="visually-hidden"
+                onChange={(event) => void handleImage(event.target.files?.[0], replaceImagePositionRef.current)}
+                ref={replaceImageInputRef}
+                type="file"
+              />
+            </div>
+          </>
+        ) : (
+          <>
         <div className="study-toolbar-group">
           <select aria-label="Estilo do parágrafo" className="study-toolbar-select block-style" disabled={!editor} onChange={(event) => handleBlockType(event.target.value)} onPointerDown={rememberTextSelection} value={blockType}>
             <option value="paragraph">Texto normal</option>
@@ -1052,6 +1301,8 @@ export function StudyDocumentEditor({
             ) : null}
           </div>
         </div>
+          </>
+        )}
       </div>
 
       <div className="study-document-body">
@@ -1097,6 +1348,15 @@ export function StudyDocumentEditor({
           </article>
         </main>
       </div>
+      {imageCropTarget ? (
+        <StudyImageCropDialog
+          alt={imageCropTarget.alt}
+          onApply={applyImageCrop}
+          onClose={() => setImageCropTarget(null)}
+          originalAspect={imageCropTarget.originalAspect}
+          src={imageCropTarget.src}
+        />
+      ) : null}
     </section>
   );
 }

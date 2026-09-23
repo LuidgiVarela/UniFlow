@@ -1842,6 +1842,10 @@ label {
   color: #ff8a8a;
 }
 
+.info-message {
+  color: #e0b85f;
+}
+
 .warning-text {
   color: #f5be5c !important;
 }
@@ -3184,7 +3188,7 @@ label {
 
 .task-generator {
   display: grid;
-  grid-template-columns: minmax(110px, 0.6fr) minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(220px, 1fr) auto;
   gap: 10px;
   align-items: end;
   border: 1px solid var(--line-soft);
@@ -3274,9 +3278,11 @@ label {
   color: var(--foreground);
 }
 
-.task-generator .question-zero-action {
+.question-generator-secondary-actions {
   grid-column: 1 / -1;
-  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .question-dashboard-list {

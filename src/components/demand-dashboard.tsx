@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, NotebookPen, Pencil, Plus, Star, Trash2, X } from "lucide-react";
+import { Check, NotebookPen, Pencil, Plus, RotateCcw, Star, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useMemo, useState } from "react";
@@ -8,6 +8,10 @@ import { useAppData } from "@/components/data-provider";
 import type { Demand, DemandQuestion, DemandQuestionDifficulty, DemandQuestionItem } from "@/types/domain";
 
 type QuestionNumberingMode = "sequential" | "custom";
+
+const DEFAULT_ITEM_PATTERN = "a,b,c,d";
+const QUESTION_BATCH_GAP_MS = 250;
+const QUESTION_BATCH_UNDO_LIMIT_MS = 24 * 60 * 60 * 1000;
 
 const difficulties: Array<{ value: DemandQuestionDifficulty; label: string }> = [
   { value: "facil", label: "Fácil" },
@@ -43,12 +47,48 @@ function splitLabels(value: string) {
   return value.split(/[,;\n]+/).map((label) => label.trim()).filter(Boolean);
 }
 
+function looksLikeQuestionIdentifiers(labels: string[]) {
+  return labels.length > 0 && labels.every((label) => /^\d+(?:\.[a-z0-9]+)+$/i.test(label));
+}
+
+function latestUntouchedQuestionBatch(
+  questions: DemandQuestion[],
+  itemsByQuestion: Record<string, DemandQuestionItem[]>,
+) {
+  const timedQuestions = questions
+    .map((question) => ({ question, time: new Date(question.created_at).getTime() }))
+    .filter((item) => Number.isFinite(item.time))
+    .sort((a, b) => b.time - a.time || b.question.order_index - a.question.order_index);
+  const latest = timedQuestions[0];
+  if (!latest || Date.now() - latest.time > QUESTION_BATCH_UNDO_LIMIT_MS) return [];
+
+  const batch = [latest];
+  let previousTime = latest.time;
+  for (const item of timedQuestions.slice(1)) {
+    if (previousTime - item.time > QUESTION_BATCH_GAP_MS) break;
+    batch.push(item);
+    previousTime = item.time;
+  }
+
+  const untouched = batch.every(({ question }) => {
+    const items = itemsByQuestion[question.id] ?? [];
+    return question.difficulty === "media"
+      && !question.important
+      && !(question.notes ?? "").trim()
+      && items.every((item) => !item.done && !item.important)
+      && looksLikeQuestionIdentifiers(items.map((item) => item.label));
+  });
+  if (!untouched) return [];
+  return batch.map(({ question }) => question).sort((a, b) => a.order_index - b.order_index);
+}
+
 export function DemandDashboard({ demand }: { demand: Demand }) {
   const {
     demandQuestionItems,
     demandQuestions,
     generateDemandQuestions,
     removeDemandQuestionItem,
+    removeDemandQuestions,
     upsertDemandQuestion,
     upsertDemandQuestionItem,
   } = useAppData();
@@ -56,9 +96,11 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
   const [questionCount, setQuestionCount] = useState(demand.total_items ?? 21);
   const [questionStart, setQuestionStart] = useState<0 | 1>(1);
   const [customQuestionLabels, setCustomQuestionLabels] = useState("");
-  const [itemPattern, setItemPattern] = useState("a,b,c,d");
+  const [itemPattern, setItemPattern] = useState(DEFAULT_ITEM_PATTERN);
   const [generating, setGenerating] = useState(false);
+  const [undoingBatch, setUndoingBatch] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [questionLabelDraft, setQuestionLabelDraft] = useState("");
@@ -81,6 +123,10 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     }
     return result;
   }, [demandQuestionItems, questions]);
+  const latestUndoBatch = useMemo(
+    () => latestUntouchedQuestionBatch(questions, itemsByQuestion),
+    [itemsByQuestion, questions],
+  );
 
   const totalItems = questions.reduce((sum, question) => sum + (itemsByQuestion[question.id]?.length ?? 0), 0);
   const doneItems = questions.reduce(
@@ -108,25 +154,44 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     };
   });
   const hasQuestionZero = questions.some((question) => questionIdentifier(question.label) === "0");
+  const customQuestionCount = splitLabels(customQuestionLabels).length;
+  const requestedQuestionCount = numberingMode === "custom" ? customQuestionCount : questionCount;
 
   async function submitGenerator(event: React.FormEvent) {
     event.preventDefault();
     const labels = splitLabels(itemPattern);
     const requestedLabels = numberingMode === "custom" ? splitLabels(customQuestionLabels) : undefined;
+    if (looksLikeQuestionIdentifiers(labels) && (numberingMode === "sequential" || !requestedLabels?.length)) {
+      setNumberingMode("custom");
+      setCustomQuestionLabels(labels.join(", "));
+      setItemPattern(DEFAULT_ITEM_PATTERN);
+      setError(null);
+      setNotice("As numerações foram movidas para o campo correto. Confira e clique em adicionar novamente.");
+      return;
+    }
     if (!labels.length) {
       setError("Informe ao menos um item para cada questão.");
+      setNotice(null);
       return;
     }
     if (numberingMode === "custom" && !requestedLabels?.length) {
       setError("Informe os identificadores das questões.");
+      setNotice(null);
       return;
     }
     if (numberingMode === "sequential" && (!Number.isFinite(questionCount) || questionCount < 1)) {
       setError("Informe uma quantidade válida de questões.");
+      setNotice(null);
       return;
+    }
+    const creationCount = requestedLabels?.length ?? questionCount;
+    if (questions.length && creationCount >= 10) {
+      const confirmed = window.confirm(`Adicionar ${creationCount} novas questões a esta lista?`);
+      if (!confirmed) return;
     }
     setGenerating(true);
     setError(null);
+    setNotice(null);
     try {
       await generateDemandQuestions(
         demand.id,
@@ -136,6 +201,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         requestedLabels,
       );
       if (requestedLabels) setCustomQuestionLabels("");
+      setNotice(`${creationCount} ${creationCount === 1 ? "questão adicionada" : "questões adicionadas"}.`);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Não foi possível gerar as questões.");
     } finally {
@@ -151,12 +217,37 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     }
     setGenerating(true);
     setError(null);
+    setNotice(null);
     try {
       await generateDemandQuestions(demand.id, 1, labels, 0);
+      setNotice("Questão 0 adicionada.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Não foi possível adicionar a Questão 0.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function undoLatestQuestionBatch() {
+    if (!latestUndoBatch.length) return;
+    const firstLabel = displayQuestionLabel(latestUndoBatch[0].label);
+    const lastLabel = displayQuestionLabel(latestUndoBatch.at(-1)?.label ?? latestUndoBatch[0].label);
+    const range = latestUndoBatch.length === 1 ? firstLabel : `${firstLabel} até ${lastLabel}`;
+    const confirmed = window.confirm(
+      `Remover ${latestUndoBatch.length} ${latestUndoBatch.length === 1 ? "questão" : "questões"} da última adição (${range})? As questões anteriores serão preservadas.`,
+    );
+    if (!confirmed) return;
+
+    setUndoingBatch(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await removeDemandQuestions(latestUndoBatch.map((question) => question.id));
+      setNotice(`${latestUndoBatch.length} ${latestUndoBatch.length === 1 ? "questão removida" : "questões removidas"} da última adição.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível desfazer a última adição.");
+    } finally {
+      setUndoingBatch(false);
     }
   }
 
@@ -262,7 +353,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
         onSubmit={submitGenerator}
       >
         <div className="question-numbering-field">
-          <span>Numeração</span>
+          <span>Criar questões</span>
           <div aria-label="Formato da numeração" className="question-numbering-control" role="group">
             <button
               aria-pressed={numberingMode === "sequential"}
@@ -270,7 +361,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
               onClick={() => setNumberingMode("sequential")}
               type="button"
             >
-              Sequencial
+              Por quantidade
             </button>
             <button
               aria-pressed={numberingMode === "custom"}
@@ -278,16 +369,16 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
               onClick={() => setNumberingMode("custom")}
               type="button"
             >
-              Personalizada
+              Informar números
             </button>
           </div>
         </div>
         {numberingMode === "sequential" ? (
-          <label>Quantidade<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
+          <label>Quantidade de novas questões<input min="1" step="1" type="number" value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))} /></label>
         ) : (
-          <label className="custom-question-labels">Questões da lista<input placeholder="1.1, 1.2, 1.3" value={customQuestionLabels} onChange={(event) => setCustomQuestionLabels(event.target.value)} /></label>
+          <label className="custom-question-labels">Números das questões<input placeholder="1.1, 1.2, 1.3" value={customQuestionLabels} onChange={(event) => setCustomQuestionLabels(event.target.value)} /></label>
         )}
-        <label>Itens por questão<input placeholder="a, b, c" value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
+        <label>Subitens de cada questão<input placeholder="a, b, c" value={itemPattern} onChange={(event) => setItemPattern(event.target.value)} /></label>
         {numberingMode === "sequential" && !questions.length ? (
           <div className="question-start-field">
             <span>Primeira questão</span>
@@ -307,15 +398,34 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
           </div>
         ) : null}
         <button className={`primary-button ${generating ? "is-loading" : ""}`} disabled={generating} type="submit">
-          {questions.length ? "Adicionar questões" : "Configurar lista"}
+          {generating
+            ? "Adicionando..."
+            : `${questions.length ? "Adicionar" : "Criar"} ${requestedQuestionCount > 0 ? requestedQuestionCount : ""} ${requestedQuestionCount === 1 ? "questão" : "questões"}`}
         </button>
-        {questions.length && !hasQuestionZero ? (
-          <button className="ghost-action question-zero-action" disabled={generating} onClick={() => void addQuestionZero()} type="button">
-            <Plus size={15} />Adicionar Questão 0
-          </button>
+        {questions.length && (!hasQuestionZero || latestUndoBatch.length) ? (
+          <div className="question-generator-secondary-actions">
+            {!hasQuestionZero ? (
+              <button className="ghost-action question-zero-action" disabled={generating || undoingBatch} onClick={() => void addQuestionZero()} type="button">
+                <Plus size={15} />Adicionar Questão 0
+              </button>
+            ) : null}
+            {latestUndoBatch.length ? (
+              <button
+                className={`ghost-action danger ${undoingBatch ? "is-loading" : ""}`}
+                disabled={generating || undoingBatch}
+                onClick={() => void undoLatestQuestionBatch()}
+                title="Remove somente o lote mais recente e ainda não respondido"
+                type="button"
+              >
+                {undoingBatch ? null : <RotateCcw size={15} />}
+                {undoingBatch ? "Desfazendo..." : `Desfazer última adição (${latestUndoBatch.length})`}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </form>
-      {error ? <p className="form-message error-message">{error}</p> : null}
+      {notice ? <p className="form-message info-message" role="status">{notice}</p> : null}
+      {error ? <p className="form-message error-message" role="alert">{error}</p> : null}
 
       <div className="question-dashboard-list">
         {questions.map((question) => {

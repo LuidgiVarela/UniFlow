@@ -360,6 +360,28 @@ export async function deleteDemandQuestionItem(id: string) {
   if (error) throw error;
 }
 
+export async function deleteDemandQuestions(ids: string[]) {
+  const questionIds = [...new Set(ids)].filter(Boolean);
+  if (!questionIds.length) return;
+
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const idSet = new Set(questionIds);
+    data.demandQuestions = data.demandQuestions.filter((question) => !idSet.has(question.id));
+    data.demandQuestionItems = data.demandQuestionItems.filter((item) => !idSet.has(item.question_id));
+    writeDemoData(data);
+    return;
+  }
+
+  const user_id = await requireUserId();
+  const { error } = await supabase
+    .from("demand_questions")
+    .delete()
+    .eq("user_id", user_id)
+    .in("id", questionIds);
+  if (error) throw error;
+}
+
 function demandQuestionNumber(question: Pick<DemandQuestion, "label">) {
   const match = question.label.trim().match(/^Quest(?:ão|ao)\s+(\d+)$/i);
   return match ? Number(match[1]) : null;
@@ -437,6 +459,7 @@ export async function generateDemandQuestionSet(
     const existingQuestions = data.demandQuestions.filter((question) => question.demand_id === demandId);
     const blueprints = demandQuestionBlueprints(existingQuestions, cleanCount, requestedStart, requestedLabels);
     if (!blueprints.length) return;
+    const createdAt = new Date().toISOString();
     const questions: DemandQuestion[] = blueprints.map((blueprint) => ({
       id: crypto.randomUUID(),
       demand_id: demandId,
@@ -445,7 +468,7 @@ export async function generateDemandQuestionSet(
       important: false,
       notes: "",
       order_index: blueprint.order_index,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
     }));
     const items: DemandQuestionItem[] = questions.flatMap((question) =>
       cleanLabels.map((label, index) => ({
@@ -474,6 +497,7 @@ export async function generateDemandQuestionSet(
 
   const blueprints = demandQuestionBlueprints(existingQuestions ?? [], cleanCount, requestedStart, requestedLabels);
   if (!blueprints.length) return;
+  const createdAt = new Date().toISOString();
   const questions = blueprints.map((blueprint) => ({
     id: crypto.randomUUID(),
     user_id,
@@ -483,7 +507,7 @@ export async function generateDemandQuestionSet(
     important: false,
     notes: "",
     order_index: blueprint.order_index,
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
   }));
   const insertedQuestions = await supabase.from("demand_questions").insert(questions).select();
   if (insertedQuestions.error) throw insertedQuestions.error;

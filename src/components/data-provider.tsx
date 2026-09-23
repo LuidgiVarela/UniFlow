@@ -6,6 +6,7 @@ import {
   deleteAssessment,
   deleteDemand,
   deleteDemandQuestionItem,
+  deleteDemandQuestions,
   deleteGradeComponent,
   deleteMaterialFolder,
   deleteMaterial,
@@ -73,6 +74,7 @@ type DataContextValue = AppData & {
   upsertDemandQuestion: (question: DemandQuestion) => Promise<void>;
   upsertDemandQuestionItem: (item: DemandQuestionItem) => Promise<void>;
   removeDemandQuestionItem: (id: string) => Promise<void>;
+  removeDemandQuestions: (ids: string[]) => Promise<void>;
   generateDemandQuestions: (
     demandId: string,
     questionCount: number,
@@ -353,6 +355,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             await deleteDemandQuestionItem(id);
           } catch (error) {
             updateData((current) => ({ ...current, demandQuestionItems: previousItems }));
+            throw error;
+          }
+        });
+      },
+      async removeDemandQuestions(ids) {
+        const idSet = new Set(ids);
+        if (!idSet.size) return;
+        const previousQuestions = dataRef.current.demandQuestions;
+        const previousItems = dataRef.current.demandQuestionItems;
+        const operationId = ids[0] ?? "batch";
+        await trackOperation(`delete:demand-question-batch:${operationId}`, "Desfazendo adição...", async () => {
+          updateData((current) => ({
+            ...current,
+            demandQuestions: current.demandQuestions.filter((question) => !idSet.has(question.id)),
+            demandQuestionItems: current.demandQuestionItems.filter((item) => !idSet.has(item.question_id)),
+          }));
+          try {
+            await deleteDemandQuestions(ids);
+          } catch (error) {
+            updateData((current) => ({
+              ...current,
+              demandQuestions: previousQuestions,
+              demandQuestionItems: previousItems,
+            }));
             throw error;
           }
         });

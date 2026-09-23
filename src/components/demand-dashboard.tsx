@@ -105,6 +105,7 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
   const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [questionLabelDraft, setQuestionLabelDraft] = useState("");
   const [savingQuestionLabel, setSavingQuestionLabel] = useState(false);
+  const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
 
   const questions = useMemo(
     () =>
@@ -278,6 +279,32 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
     }
   }
 
+  async function deleteQuestion(question: DemandQuestion, itemCount: number) {
+    const label = displayQuestionLabel(question.label);
+    const confirmed = window.confirm(
+      `Remover "${label}" e todos os seus subitens (${itemCount}) do dashboard?\n\nAs demais questões e o conteúdo escrito no caderno da lista serão preservados. Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingQuestionId(question.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await removeDemandQuestions([question.id]);
+      setNoteDrafts((current) => {
+        const next = { ...current };
+        delete next[question.id];
+        return next;
+      });
+      if (editingQuestionId === question.id) setEditingQuestionId(null);
+      setNotice(`${label} removida. As outras questões foram preservadas.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : `Não foi possível remover ${label}.`);
+    } finally {
+      setDeletingQuestionId(null);
+    }
+  }
+
   async function addItem(question: DemandQuestion, items: DemandQuestionItem[]) {
     const orderIndex = items.reduce((max, item) => Math.max(max, item.order_index), 0) + 1;
     await upsertDemandQuestionItem({
@@ -433,8 +460,13 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
           const done = items.filter((item) => item.done).length;
           const noteValue = noteDrafts[question.id] ?? question.notes ?? "";
           const questionPercent = items.length ? Math.round((done / items.length) * 100) : 0;
+          const isDeleting = deletingQuestionId === question.id;
           return (
-            <article className={`question-card ${question.important ? "important" : ""}`} key={question.id}>
+            <article
+              aria-busy={isDeleting}
+              className={`question-card ${question.important ? "important" : ""} ${isDeleting ? "is-pending-removal" : ""}`}
+              key={question.id}
+            >
               <div className={`question-card-header ${editingQuestionId === question.id ? "editing-label" : ""}`}>
                 <div>
                   <div className="question-title-line">
@@ -477,16 +509,28 @@ export function DemandDashboard({ demand }: { demand: Demand }) {
                     <button
                       aria-label={question.important ? "Remover marca de questão importante" : "Marcar como questão importante"}
                       className={`question-star-button ${question.important ? "active" : ""}`}
+                      disabled={isDeleting}
                       onClick={() => updateQuestion(question, { important: !question.important })}
                       title={question.important ? "Questão importante" : "Marcar como importante"}
                       type="button"
                     >
                       <Star size={15} />
                     </button>
+                    <button
+                      aria-label={`Remover ${displayQuestionLabel(question.label)}`}
+                      className={`question-remove-button ${isDeleting ? "is-loading" : ""}`}
+                      disabled={isDeleting}
+                      onClick={() => void deleteQuestion(question, items.length)}
+                      title="Remover questão"
+                      type="button"
+                    >
+                      {isDeleting ? null : <Trash2 size={15} />}
+                    </button>
                   </div>
                   <small>{progressText(done, items.length)}</small>
                 </div>
                 <select
+                  disabled={isDeleting}
                   value={question.difficulty}
                   onChange={(event) => updateQuestion(question, { difficulty: event.target.value as DemandQuestionDifficulty })}
                 >

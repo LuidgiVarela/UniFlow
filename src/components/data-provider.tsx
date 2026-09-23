@@ -365,7 +365,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const previousQuestions = dataRef.current.demandQuestions;
         const previousItems = dataRef.current.demandQuestionItems;
         const operationId = ids[0] ?? "batch";
-        await trackOperation(`delete:demand-question-batch:${operationId}`, "Desfazendo adição...", async () => {
+        const operationLabel = idSet.size === 1 ? "Removendo questão..." : "Removendo questões...";
+        await trackOperation(`delete:demand-question:${operationId}`, operationLabel, async () => {
           updateData((current) => ({
             ...current,
             demandQuestions: current.demandQuestions.filter((question) => !idSet.has(question.id)),

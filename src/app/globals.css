@@ -3392,7 +3392,8 @@ label {
   background: var(--surface-strong);
 }
 
-.question-star-button {
+.question-star-button,
+.question-remove-button {
   width: 28px;
   height: 28px;
   display: inline-grid;
@@ -3404,6 +3405,12 @@ label {
   color: var(--subtle);
 }
 
+.question-star-button:disabled,
+.question-remove-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .question-star-button:hover,
 .question-star-button.active {
   border-color: rgba(245, 190, 92, 0.52);
@@ -3413,6 +3420,13 @@ label {
 
 .question-star-button.active svg {
   fill: currentColor;
+}
+
+.question-remove-button:hover,
+.question-remove-button:focus-visible {
+  border-color: rgba(217, 108, 108, 0.48);
+  color: var(--danger);
+  background: rgba(217, 108, 108, 0.1);
 }
 
 .question-items {

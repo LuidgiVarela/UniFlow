@@ -20,6 +20,8 @@ import {
   Check,
   Code2,
   Columns3,
+  CloudOff,
+  CloudUpload,
   Crop,
   FileDown,
   GripVertical,
@@ -39,6 +41,7 @@ import {
   Plus,
   Quote,
   Redo2,
+  RefreshCw,
   Rows3,
   Save,
   Strikethrough,
@@ -272,6 +275,24 @@ function documentSignature(document: Pick<StudyDocument, "content" | "title">) {
   return JSON.stringify({ title: document.title, content: document.content });
 }
 
+function documentHasContent(document: Pick<StudyDocument, "content">) {
+  function nodeHasContent(node: JSONContent): boolean {
+    if (node.text?.trim()) return true;
+    if (["horizontalRule", "image", "table"].includes(node.type ?? "")) return true;
+    return node.content?.some(nodeHasContent) ?? false;
+  }
+
+  return nodeHasContent(document.content as JSONContent);
+}
+
+function syncErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Não foi possível acessar o Supabase.";
+}
+
 function normalizeQuestionLabel(value: string) {
   return value.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
 }
@@ -381,8 +402,8 @@ function uniformTextStyleAttribute(editor: Editor | null, attribute: string, fal
 }
 
 function formatSavedTime(value: string | null) {
-  if (!value) return "Salvo";
-  return `Salvo às ${new Intl.DateTimeFormat("pt-BR", {
+  if (!value) return "Sincronizado";
+  return `Sincronizado às ${new Intl.DateTimeFormat("pt-BR", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value))}`;
@@ -673,13 +694,12 @@ export function StudyDocumentEditor({
         return true;
       } catch (error) {
         const localSaved = writeLocalDocument(snapshot);
+        const reason = syncErrorMessage(error);
         setStatus("local");
         setSyncError(
           localSaved
-            ? "O rascunho está protegido neste navegador, mas ainda não foi sincronizado."
-            : error instanceof Error
-              ? error.message
-              : "Não foi possível salvar o documento.",
+            ? `O rascunho está protegido neste navegador, mas ainda não foi sincronizado. ${reason}`
+            : reason,
         );
         return false;
       }
@@ -717,8 +737,19 @@ export function StudyDocumentEditor({
       }
       if (cancelled) return;
 
+      const localSignature = local ? documentSignature(local.document) : null;
+      const remoteSignature = remote ? documentSignature(remote) : null;
+      const versionsDiffer = Boolean(local && remote && localSignature !== remoteSignature);
       const localIsNewer = Boolean(local && (!remote || timestamp(local.savedAt) > timestamp(remote.updated_at) + 500));
-      const selected = localIsNewer ? local?.document ?? null : remote;
+      const localProtectsContent = Boolean(
+        local
+        && remote
+        && versionsDiffer
+        && documentHasContent(local.document)
+        && !documentHasContent(remote),
+      );
+      const shouldUseLocal = Boolean(local && (!remote || (versionsDiffer && (localIsNewer || localProtectsContent))));
+      const selected = shouldUseLocal ? local?.document ?? null : remote;
       const now = new Date().toISOString();
       const initial: StudyDocument = selected ?? {
         id: crypto.randomUUID(),
@@ -743,15 +774,15 @@ export function StudyDocumentEditor({
       currentEditor.setEditable(true);
       setWordCount(countWords(currentEditor.getText()));
       setSavedAt(remote?.updated_at ?? null);
-      lastSavedSignatureRef.current = remote ? documentSignature(remote) : documentSignature(initial);
+      lastSavedSignatureRef.current = remoteSignature ?? "";
       readyRef.current = true;
 
-      if (normalized.changed) writeLocalDocument(loadedDocument);
+      if (normalized.changed || (!local && remote)) writeLocalDocument(loadedDocument);
 
       if (remoteError) {
         setStatus("local");
-        setSyncError("Sincronização indisponível. O rascunho continuará protegido neste navegador.");
-      } else if (localIsNewer || normalized.changed) {
+        setSyncError(`Sincronização indisponível. O rascunho continuará protegido neste navegador. ${syncErrorMessage(remoteError)}`);
+      } else if (shouldUseLocal || normalized.changed) {
         setStatus("dirty");
         scheduleSave(180);
       } else {
@@ -810,9 +841,9 @@ export function StudyDocumentEditor({
     : status === "saving"
       ? "Salvando..."
       : status === "dirty"
-        ? "Alterações pendentes"
+        ? "Aguardando sincronização"
         : status === "local"
-          ? "Salvo neste navegador"
+          ? "Somente neste navegador"
           : formatSavedTime(savedAt);
 
   function handleTitleChange(value: string) {
@@ -1049,7 +1080,13 @@ export function StudyDocumentEditor({
         </div>
         <div className="study-document-header-actions">
           <div aria-live="polite" className={`study-save-status ${status}`} title={syncError ?? statusLabel}>
-            {status === "saving" || status === "loading" ? <LoaderCircle className="spin-icon" size={15} /> : <Check size={15} />}
+            {status === "saving" || status === "loading"
+              ? <LoaderCircle className="spin-icon" size={15} />
+              : status === "local"
+                ? <CloudOff size={15} />
+                : status === "dirty"
+                  ? <CloudUpload size={15} />
+                  : <Check size={15} />}
             <span>{statusLabel}</span>
           </div>
           <button className="study-header-action secondary" disabled={!editor || status === "loading"} onClick={() => void saveNow(true)} title="Salvar agora" type="button">
@@ -1336,7 +1373,19 @@ export function StudyDocumentEditor({
         </aside>
 
         <main className="study-document-canvas">
-          {syncError ? <div className="study-document-sync-alert" role="status">{syncError}</div> : null}
+          {syncError ? (
+            <div className="study-document-sync-alert" role="status">
+              <span>{syncError}</span>
+              <button
+                disabled={status === "saving"}
+                onClick={() => void saveNow(true)}
+                type="button"
+              >
+                <RefreshCw className={status === "saving" ? "spin-icon" : ""} size={14} />
+                Tentar sincronizar
+              </button>
+            </div>
+          ) : null}
           <article
             className="study-document-paper"
             style={{ "--study-document-zoom": zoom / 100 } as CSSProperties}

@@ -448,6 +448,7 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 18px;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -8068,12 +8069,44 @@ body.is-resizing-material-tree {
   margin: 0 auto 12px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 11px;
   border: 1px solid rgba(239, 195, 107, 0.35);
   border-radius: 7px;
   color: #efc36b;
   background: #171610;
   font-size: 0.76rem;
+}
+
+.study-document-sync-alert span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.study-document-sync-alert button {
+  min-height: 28px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(239, 195, 107, 0.4);
+  border-radius: 6px;
+  color: #f4d28e;
+  background: rgba(239, 195, 107, 0.08);
+  font-weight: 720;
+}
+
+.study-document-sync-alert button:hover {
+  background: rgba(239, 195, 107, 0.15);
+}
+
+.study-document-sync-alert button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .study-document-paper {

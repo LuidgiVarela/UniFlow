@@ -146,6 +146,13 @@ export type AssessmentMaterial = {
   created_at?: string;
 };
 
+export type AssessmentStudyOrder = {
+  assessment_id: string;
+  user_id?: string;
+  item_keys: string[];
+  updated_at?: string;
+};
+
 export type ReviewEvent = {
   id: string;
   user_id?: string;
@@ -239,6 +246,7 @@ export type AppData = {
   assessments: Assessment[];
   assessmentTopics: AssessmentTopic[];
   assessmentMaterials: AssessmentMaterial[];
+  assessmentStudyOrders: AssessmentStudyOrder[];
   reviewEvents: ReviewEvent[];
   reviewDayPlans: ReviewDayPlan[];
   reviewQueueItems: ReviewQueueItem[];

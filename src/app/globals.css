@@ -2589,6 +2589,10 @@ label {
 }
 
 .preparation-section-actions > span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 0.78rem;
 }
@@ -2604,6 +2608,7 @@ label {
 
 .preparation-topic-row {
   min-width: 0;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(360px, 1.25fr) minmax(150px, auto);
   align-items: center;
@@ -2611,6 +2616,50 @@ label {
   scroll-margin-top: 20px;
   padding: 13px 0;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.preparation-topic-row.dragging {
+  z-index: 3;
+  border-color: var(--line);
+  background: var(--surface);
+  opacity: 0.82;
+}
+
+.preparation-topic-primary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.preparation-drag-handle {
+  width: 26px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--subtle);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.preparation-drag-handle:hover,
+.preparation-drag-handle:focus-visible {
+  color: var(--foreground);
+  background: var(--surface-strong);
+}
+
+.preparation-drag-handle:active,
+.preparation-topic-row.dragging .preparation-drag-handle {
+  cursor: grabbing;
+}
+
+.preparation-drag-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .preparation-topic-copy {

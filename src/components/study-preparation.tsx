@@ -1,13 +1,33 @@
 "use client";
 
 import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   BookOpenCheck,
   CalendarDays,
   ChevronRight,
   CircleAlert,
   ExternalLink,
   FileText,
+  GripVertical,
   ListTodo,
+  LoaderCircle,
   Pencil,
   Sparkles,
   Target,
@@ -151,6 +171,93 @@ function materialTypeLabel(material: Material) {
   return /\.pdf$/i.test(material.name) ? "PDF" : "Arquivo de estudo";
 }
 
+function SortableStudyUnitRow({
+  disabled,
+  level,
+  onUpdateMastery,
+  saving,
+  unit,
+}: {
+  disabled: boolean;
+  level: TopicMasteryLevel;
+  onUpdateMastery: (unit: StudyUnit, level: TopicMasteryLevel) => void;
+  saving: boolean;
+  unit: StudyUnit;
+}) {
+  const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({
+    id: unit.key,
+    disabled,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <article
+      aria-busy={saving || isDragging}
+      className={`preparation-topic-row ${unit.kind === "material" ? "material" : ""} ${isDragging ? "dragging" : ""}`}
+      id={`preparation-${unit.key}`}
+      ref={setNodeRef}
+      style={style}
+    >
+      <div className="preparation-topic-primary">
+        <button
+          aria-label={`Reordenar ${unit.title}`}
+          className="preparation-drag-handle"
+          disabled={disabled}
+          title="Arrastar para reordenar"
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={16} />
+        </button>
+        <div className="preparation-topic-copy">
+          <div className="preparation-unit-title">
+            {unit.kind === "material" ? <FileText size={16} /> : <BookOpenCheck size={16} />}
+            <strong>{unit.title}</strong>
+          </div>
+          <small>
+            {unit.subtitle}
+            {unit.material ? (
+              <a href={materialHref(unit.material)} rel="noreferrer" target="_blank">
+                Abrir<ExternalLink size={13} />
+              </a>
+            ) : null}
+          </small>
+          {unit.unmetPrerequisiteTitles.length ? (
+            <small className="preparation-prerequisite-warning">
+              <CircleAlert aria-hidden="true" size={13} />
+              Estude antes: {unit.unmetPrerequisiteTitles.join(", ")}
+            </small>
+          ) : null}
+        </div>
+      </div>
+      <div aria-label={`Domínio de ${unit.title}`} className="mastery-segmented-control" role="group">
+        {masteryOptions.map((option) => (
+          <button
+            aria-label={`Marcar ${unit.title} como ${option.label}`}
+            aria-pressed={level === option.level}
+            className={level === option.level ? "active" : ""}
+            data-level={option.level}
+            disabled={disabled || saving}
+            key={option.level}
+            onClick={() => onUpdateMastery(unit, option.level)}
+            type="button"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <span className="preparation-review-date">
+        <CalendarDays size={15} />
+        {saving ? "Salvando..." : nextReviewText(unit)}
+      </span>
+    </article>
+  );
+}
+
 export function StudyPreparation({
   subject,
   assessments,
@@ -161,11 +268,23 @@ export function StudyPreparation({
   materials,
   onEditAssessment,
 }: StudyPreparationProps) {
-  const { topicPrerequisites, upsertAssessmentMaterialProgress, upsertTopic } = useAppData();
+  const {
+    assessmentStudyOrders,
+    reorderAssessmentStudyUnits,
+    topicPrerequisites,
+    upsertAssessmentMaterialProgress,
+    upsertTopic,
+  } = useAppData();
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string | null>(null);
   const [savingUnitIds, setSavingUnitIds] = useState<Set<string>>(() => new Set());
   const [saveError, setSaveError] = useState<string | null>(null);
   const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const upcomingAssessments = useMemo(
     () => assessments
       .filter(isAssessmentUpcoming)
@@ -206,7 +325,7 @@ export function StudyPreparation({
     .filter((material) => linkedMaterialById.has(material.id) && (material.type === "file" || Boolean(material.url)))
     .sort((a, b) => (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER)
       || a.name.localeCompare(b.name, "pt-BR"));
-  const studyUnits: StudyUnit[] = [
+  const rawStudyUnits: StudyUnit[] = [
     ...preparationTopics.map((topic) => ({
       key: `topic-${topic.id}`,
       kind: "topic" as const,
@@ -248,6 +367,16 @@ export function StudyPreparation({
       };
     }),
   ];
+  const savedStudyOrder = assessmentStudyOrders.find((item) => item.assessment_id === selectedAssessment.id);
+  const savedPositions = new Map((savedStudyOrder?.item_keys ?? []).map((key, index) => [key, index]));
+  const savedOrderLength = savedPositions.size;
+  const studyUnits = rawStudyUnits
+    .sort((a, b) => {
+      const aPosition = savedPositions.get(a.key) ?? savedOrderLength + a.orderIndex;
+      const bPosition = savedPositions.get(b.key) ?? savedOrderLength + b.orderIndex;
+      return aPosition - bPosition || a.title.localeCompare(b.title, "pt-BR");
+    })
+    .map((unit, index) => ({ ...unit, orderIndex: index }));
   const levels = studyUnits.map(masteryLevel);
   const readiness = calculateReadiness(studyUnits.map((unit) => ({
     mastery: masteryLevel(unit),
@@ -287,6 +416,25 @@ export function StudyPreparation({
         next.delete(unit.key);
         return next;
       });
+    }
+  }
+
+  async function handleStudyUnitDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || reordering) return;
+    const oldIndex = studyUnits.findIndex((unit) => unit.key === active.id);
+    const newIndex = studyUnits.findIndex((unit) => unit.key === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const nextUnits = arrayMove(studyUnits, oldIndex, newIndex);
+    setReordering(true);
+    setSaveError(null);
+    try {
+      await reorderAssessmentStudyUnits(selectedAssessment.id, nextUnits.map((unit) => unit.key));
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Não foi possível salvar a nova ordem.");
+    } finally {
+      setReordering(false);
     }
   }
 
@@ -395,7 +543,9 @@ export function StudyPreparation({
               <h3>Conteúdos e materiais</h3>
             </div>
             <div className="preparation-section-actions">
-              <span>{studyUnits.length} {studyUnits.length === 1 ? "item" : "itens"}</span>
+              <span aria-live="polite">
+                {reordering ? <><LoaderCircle className="spin-icon" size={13} />Salvando ordem...</> : `${studyUnits.length} ${studyUnits.length === 1 ? "item" : "itens"}`}
+              </span>
               <button aria-label="Selecionar conteúdos e materiais" className="icon-button" onClick={() => onEditAssessment(selectedAssessment)} title="Selecionar conteúdos e materiais" type="button">
                 <Pencil size={15} />
               </button>
@@ -403,61 +553,22 @@ export function StudyPreparation({
           </header>
 
           {studyUnits.length ? (
-            <div className="preparation-topic-list">
-              {studyUnits.map((unit) => {
-                const level = masteryLevel(unit);
-                const saving = savingUnitIds.has(unit.key);
-                return (
-                  <article
-                    aria-busy={saving}
-                    className={`preparation-topic-row ${unit.kind === "material" ? "material" : ""}`}
-                    id={`preparation-${unit.key}`}
-                    key={unit.key}
-                  >
-                    <div className="preparation-topic-copy">
-                      <div className="preparation-unit-title">
-                        {unit.kind === "material" ? <FileText size={16} /> : <BookOpenCheck size={16} />}
-                        <strong>{unit.title}</strong>
-                      </div>
-                      <small>
-                        {unit.subtitle}
-                        {unit.material ? (
-                          <a href={materialHref(unit.material)} rel="noreferrer" target="_blank">
-                            Abrir<ExternalLink size={13} />
-                          </a>
-                        ) : null}
-                      </small>
-                      {unit.unmetPrerequisiteTitles.length ? (
-                        <small className="preparation-prerequisite-warning">
-                          <CircleAlert aria-hidden="true" size={13} />
-                          Estude antes: {unit.unmetPrerequisiteTitles.join(", ")}
-                        </small>
-                      ) : null}
-                    </div>
-                    <div aria-label={`Domínio de ${unit.title}`} className="mastery-segmented-control" role="group">
-                      {masteryOptions.map((option) => (
-                        <button
-                          aria-label={`Marcar ${unit.title} como ${option.label}`}
-                          aria-pressed={level === option.level}
-                          className={level === option.level ? "active" : ""}
-                          data-level={option.level}
-                          disabled={saving}
-                          key={option.level}
-                          onClick={() => void updateMastery(unit, option.level)}
-                          type="button"
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="preparation-review-date">
-                      <CalendarDays size={15} />
-                      {saving ? "Salvando..." : nextReviewText(unit)}
-                    </span>
-                  </article>
-                );
-              })}
-            </div>
+            <DndContext collisionDetection={closestCenter} onDragEnd={(event) => void handleStudyUnitDragEnd(event)} sensors={sensors}>
+              <SortableContext items={studyUnits.map((unit) => unit.key)} strategy={verticalListSortingStrategy}>
+                <div className="preparation-topic-list">
+                  {studyUnits.map((unit) => (
+                    <SortableStudyUnitRow
+                      disabled={reordering || savingUnitIds.has(unit.key)}
+                      key={unit.key}
+                      level={masteryLevel(unit)}
+                      onUpdateMastery={(target, level) => void updateMastery(target, level)}
+                      saving={savingUnitIds.has(unit.key)}
+                      unit={unit}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div className="preparation-inline-empty">
               <strong>Nenhum conteúdo ou material selecionado</strong>

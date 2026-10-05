@@ -23,6 +23,7 @@ import {
   reorderSubjects as persistSubjectOrder,
   saveAssessment,
   saveAssessmentMaterialProgress,
+  saveAssessmentStudyOrder,
   saveDemand,
   saveDemandQuestion,
   saveDemandQuestionItem,
@@ -41,6 +42,7 @@ import type {
   AppData,
   Assessment,
   AssessmentMaterial,
+  AssessmentStudyOrder,
   Demand,
   DemandQuestion,
   DemandQuestionItem,
@@ -87,6 +89,7 @@ type DataContextValue = AppData & {
   upsertAssessment: (assessment: Assessment, topicIds?: string[], materialIds?: string[]) => Promise<void>;
   addAssessmentTopics: (assessmentId: string, topicIds: string[]) => Promise<void>;
   upsertAssessmentMaterialProgress: (item: AssessmentMaterial) => Promise<void>;
+  reorderAssessmentStudyUnits: (assessmentId: string, itemKeys: string[]) => Promise<void>;
   addReviewEvent: (event: ReviewEvent) => Promise<void>;
   upsertReviewDayPlan: (plan: ReviewDayPlan) => Promise<void>;
   upsertReviewQueueItem: (item: ReviewQueueItem) => Promise<void>;
@@ -119,6 +122,7 @@ const emptyData: AppData = {
   assessments: [],
   assessmentTopics: [],
   assessmentMaterials: [],
+  assessmentStudyOrders: [],
   reviewEvents: [],
   reviewDayPlans: [],
   reviewQueueItems: [],
@@ -463,6 +467,32 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           );
         } catch (error) {
           updateData((current) => ({ ...current, assessmentMaterials: previousItems }));
+          throw error;
+        }
+      },
+      async reorderAssessmentStudyUnits(assessmentId, itemKeys) {
+        const previousOrders = dataRef.current.assessmentStudyOrders;
+        const previous = previousOrders.find((item) => item.assessment_id === assessmentId);
+        const nextOrder: AssessmentStudyOrder = {
+          ...previous,
+          assessment_id: assessmentId,
+          item_keys: itemKeys,
+          updated_at: new Date().toISOString(),
+        };
+        updateData((current) => ({
+          ...current,
+          assessmentStudyOrders: [
+            ...current.assessmentStudyOrders.filter((item) => item.assessment_id !== assessmentId),
+            nextOrder,
+          ],
+        }));
+        try {
+          await enqueueMutation(
+            `assessment-study-order:${assessmentId}`,
+            () => saveAssessmentStudyOrder(nextOrder).then(() => undefined),
+          );
+        } catch (error) {
+          updateData((current) => ({ ...current, assessmentStudyOrders: previousOrders }));
           throw error;
         }
       },

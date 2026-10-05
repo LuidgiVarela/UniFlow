@@ -4,6 +4,7 @@ import type {
   AppData,
   Assessment,
   AssessmentMaterial,
+  AssessmentStudyOrder,
   AssessmentTopic,
   Demand,
   DemandQuestion,
@@ -52,6 +53,7 @@ function readDemoData(): AppData {
     assessments: parsed.assessments ?? [],
     assessmentTopics: parsed.assessmentTopics ?? [],
     assessmentMaterials: parsed.assessmentMaterials ?? [],
+    assessmentStudyOrders: parsed.assessmentStudyOrders ?? [],
     reviewEvents: parsed.reviewEvents ?? [],
     reviewDayPlans: parsed.reviewDayPlans ?? [],
     reviewQueueItems: parsed.reviewQueueItems ?? [],
@@ -150,6 +152,7 @@ export async function loadAppData(): Promise<AppData> {
     assessments,
     assessmentTopics,
     assessmentMaterials,
+    assessmentStudyOrders,
     reviewEvents,
     reviewDayPlans,
     reviewQueueItems,
@@ -167,6 +170,7 @@ export async function loadAppData(): Promise<AppData> {
     supabase.from("assessments").select("*").order("date"),
     supabase.from("assessment_topics").select("*").order("created_at"),
     supabase.from("assessment_materials").select("*").order("created_at"),
+    supabase.from("assessment_study_orders").select("*").order("updated_at", { ascending: false }),
     supabase.from("review_events").select("*").order("created_at", { ascending: false }).limit(1000),
     supabase.from("review_day_plans").select("*").order("plan_date"),
     supabase.from("review_queue_items").select("*").order("queue_date").order("sort_order"),
@@ -190,6 +194,7 @@ export async function loadAppData(): Promise<AppData> {
     assessments: assessments.data ?? [],
     assessmentTopics: assessmentTopics.data ?? [],
     assessmentMaterials: assessmentMaterials.error ? [] : assessmentMaterials.data ?? [],
+    assessmentStudyOrders: assessmentStudyOrders.error ? [] : assessmentStudyOrders.data ?? [],
     reviewEvents: reviewEvents.error ? [] : reviewEvents.data ?? [],
     reviewDayPlans: reviewDayPlans.error ? [] : reviewDayPlans.data ?? [],
     reviewQueueItems: reviewQueueItems.error ? [] : reviewQueueItems.data ?? [],
@@ -749,6 +754,34 @@ export async function saveAssessmentMaterialProgress(item: AssessmentMaterial) {
     .single();
   if (error) throw error;
   return data as AssessmentMaterial;
+}
+
+export async function saveAssessmentStudyOrder(order: AssessmentStudyOrder) {
+  const updated_at = new Date().toISOString();
+  if (!hasSupabaseEnv || !supabase) {
+    const data = readDemoData();
+    const nextOrder: AssessmentStudyOrder = { ...order, updated_at };
+    data.assessmentStudyOrders = [
+      ...data.assessmentStudyOrders.filter((item) => item.assessment_id !== order.assessment_id),
+      nextOrder,
+    ];
+    writeDemoData(data);
+    return nextOrder;
+  }
+
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("assessment_study_orders")
+    .upsert({
+      assessment_id: order.assessment_id,
+      user_id,
+      item_keys: order.item_keys,
+      updated_at,
+    }, { onConflict: "assessment_id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AssessmentStudyOrder;
 }
 
 export async function saveReviewEvent(event: ReviewEvent) {

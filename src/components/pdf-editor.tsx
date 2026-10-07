@@ -8,6 +8,8 @@ import {
   Copy,
   Eraser,
   ExternalLink,
+  FileMinus,
+  FilePlus,
   FileText,
   Highlighter,
   ImagePlus,
@@ -111,6 +113,27 @@ type PageDefinition = {
   pdfHeight: number;
 };
 
+type SourcePageEntry = {
+  id: string;
+  kind: "source";
+  sourcePageIndex: number;
+};
+
+type BlankPageEntry = {
+  id: string;
+  kind: "blank";
+  definition: PageDefinition;
+};
+
+type PageEntry = SourcePageEntry | BlankPageEntry;
+
+type EditorSnapshot = {
+  annotations: Annotation[];
+  pageEntries: PageEntry[];
+};
+
+type BlankPagePlacement = "before" | "after" | "start" | "end";
+
 type Interaction = {
   kind: "move" | "resize" | "highlight" | "draw";
   annotationId: string;
@@ -123,7 +146,9 @@ type Interaction = {
 };
 
 const MAX_HISTORY = 60;
+const INTERNAL_ANNOTATION_CLIPBOARD_MARKER = "uniflow:pdf-annotation";
 const EMPTY_METRICS: PageMetrics = { width: 0, height: 0, pdfWidth: 0, pdfHeight: 0 };
+const DEFAULT_PAGE_DEFINITION: PageDefinition = { pdfWidth: 595.28, pdfHeight: 841.89 };
 const PDF_FONT_OPTIONS: Array<{ value: PdfFontName; label: string; css: string }> = [
   { value: "helvetica", label: "Helvetica", css: "Arial, Helvetica, sans-serif" },
   { value: "helvetica-bold", label: "Helvetica Negrito", css: "Arial, Helvetica, sans-serif" },
@@ -255,13 +280,43 @@ function hexChannels(hex: string) {
   };
 }
 
-function fileAsDataUrl(file: File) {
+function fileAsDataUrl(file: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
     reader.readAsDataURL(file);
   });
+}
+
+async function normalizedImageData(file: Blob) {
+  const sourceDataUrl = await fileAsDataUrl(file);
+  const dimensions = await imageDimensions(sourceDataUrl);
+  if (file.type === "image/png" || file.type === "image/jpeg") {
+    return {
+      ...dimensions,
+      dataUrl: sourceDataUrl,
+      mimeType: file.type as ImageAnnotation["mimeType"],
+    };
+  }
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = () => reject(new Error("Não foi possível converter a imagem copiada."));
+    element.src = sourceDataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Não foi possível preparar a imagem copiada.");
+  context.drawImage(image, 0, 0);
+  return {
+    ...dimensions,
+    dataUrl: canvas.toDataURL("image/png"),
+    mimeType: "image/png" as const,
+  };
 }
 
 function imageDimensions(dataUrl: string) {
@@ -338,6 +393,7 @@ function PdfPageSurface({
   pageIndex,
   pdfDocument,
   registerStage,
+  sourcePageIndex,
   zoom,
 }: {
   children: ReactNode;
@@ -349,6 +405,7 @@ function PdfPageSurface({
   pageIndex: number;
   pdfDocument: PDFDocumentProxy;
   registerStage: (pageIndex: number, element: HTMLDivElement | null) => void;
+  sourcePageIndex: number | null;
   zoom: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -376,13 +433,13 @@ function PdfPageSurface({
   }, [nearViewport]);
 
   useEffect(() => {
-    if (!nearViewport) return;
+    if (!nearViewport || sourcePageIndex === null) return;
     let cancelled = false;
 
     void Promise.resolve().then(async () => {
       if (!cancelled) setRendering(true);
       try {
-        const page = await pdfDocument.getPage(pageIndex + 1);
+        const page = await pdfDocument.getPage(sourcePageIndex + 1);
         const canvas = canvasRef.current;
         if (!canvas || cancelled) return;
         const viewport = page.getViewport({ scale: zoom });
@@ -416,23 +473,23 @@ function PdfPageSurface({
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
     };
-  }, [nearViewport, onDefinition, onError, pageIndex, pdfDocument, zoom]);
+  }, [nearViewport, onDefinition, onError, pageIndex, pdfDocument, sourcePageIndex, zoom]);
 
   return (
-    <div className={`pdf-page-shell ${current ? "current" : ""}`}>
+    <div className={`pdf-page-shell ${current ? "current" : ""} ${sourcePageIndex === null ? "blank" : ""}`}>
       <div
-        aria-label={`Página ${pageIndex + 1}`}
+        aria-label={`Página ${pageIndex + 1}${sourcePageIndex === null ? " em branco" : ""}`}
         className="pdf-page-stage"
         data-page-index={pageIndex}
         onPointerDown={(event) => onPointerDown(event, pageIndex)}
         ref={setStage}
         style={{ width: metrics.width, height: metrics.height }}
       >
-        <canvas ref={canvasRef} />
+        {sourcePageIndex === null ? null : <canvas ref={canvasRef} />}
         <div className="pdf-annotation-layer">{children}</div>
         {rendering ? <span className="pdf-page-rendering" aria-label="Renderizando página" /> : null}
       </div>
-      <span className="pdf-page-caption">{pageIndex + 1}</span>
+      <span className="pdf-page-caption">{pageIndex + 1}{sourcePageIndex === null ? " · Em branco" : ""}</span>
     </div>
   );
 }
@@ -460,27 +517,33 @@ export function PdfEditor() {
   const pdfDocumentRef = useRef<PDFDocumentProxy | null>(null);
   const originalBytesRef = useRef<ArrayBuffer | null>(null);
   const annotationsRef = useRef<Annotation[]>([]);
-  const historyRef = useRef<Annotation[][]>([[]]);
+  const pageEntriesRef = useRef<PageEntry[]>([]);
+  const historyRef = useRef<EditorSnapshot[]>([{ annotations: [], pageEntries: [] }]);
   const historyIndexRef = useRef(0);
   const interactionRef = useRef<Interaction | null>(null);
   const copiedAnnotationRef = useRef<Annotation | null>(null);
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const saveControlRef = useRef<HTMLDivElement | null>(null);
   const zoomControlRef = useRef<HTMLDivElement | null>(null);
+  const pageInsertControlRef = useRef<HTMLDivElement | null>(null);
   const getMaterialUrlRef = useRef(getMaterialUrl);
   const materialRef = useRef(material);
 
   const [documentReady, setDocumentReady] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
-  const [pageCount, setPageCount] = useState(0);
+  const [pageEntries, setPageEntries] = useState<PageEntry[]>([]);
+  const [sourcePageDefinitions, setSourcePageDefinitions] = useState<PageDefinition[]>([]);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [zoomDraft, setZoomDraft] = useState("100");
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
-  const [pageDefinitions, setPageDefinitions] = useState<PageDefinition[]>([]);
+  const [pageInsertMenuOpen, setPageInsertMenuOpen] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [savedSnapshot, setSavedSnapshot] = useState<Annotation[]>(annotations);
+  const [savedSnapshot, setSavedSnapshot] = useState<EditorSnapshot>(() => ({
+    annotations: [],
+    pageEntries: [],
+  }));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [activeDrawingId, setActiveDrawingId] = useState<string | null>(null);
@@ -499,10 +562,16 @@ export function PdfEditor() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
 
+  const pageDefinitions = useMemo(() => pageEntries.map((entry) => entry.kind === "blank"
+    ? entry.definition
+    : sourcePageDefinitions[entry.sourcePageIndex] ?? sourcePageDefinitions[0] ?? DEFAULT_PAGE_DEFINITION), [pageEntries, sourcePageDefinitions]);
+  const pageCount = pageEntries.length;
   const selectedAnnotation = annotations.find((annotation) => annotation.id === selectedId) ?? null;
-  const isDirty = annotations !== savedSnapshot;
-  const currentPageMetrics = metricsForPage(pageDefinitions[pageNumber - 1], zoom);
-  const editorReady = documentReady && pageDefinitions.length > 0;
+  const insertedPageCount = pageEntries.filter((entry) => entry.kind === "blank").length;
+  const hasPdfEdits = annotations.length > 0 || insertedPageCount > 0;
+  const isDirty = annotations !== savedSnapshot.annotations || pageEntries !== savedSnapshot.pageEntries;
+  const currentPageEntry = pageEntries[pageNumber - 1] ?? null;
+  const editorReady = documentReady && pageEntries.length > 0;
   const editorLayoutStyle = {
     "--pdf-inspector-width": `${inspectorWidth}px`,
   } as CSSProperties;
@@ -512,13 +581,27 @@ export function PdfEditor() {
     setAnnotations(next);
   }, []);
 
-  const resetAnnotations = useCallback(() => {
+  const replacePageEntries = useCallback((next: PageEntry[]) => {
+    pageEntriesRef.current = next;
+    setPageEntries(next);
+  }, []);
+
+  const applySnapshot = useCallback((snapshot: EditorSnapshot) => {
+    replaceAnnotations(snapshot.annotations);
+    replacePageEntries(snapshot.pageEntries);
+    setPageNumber((current) => clamp(current, 1, Math.max(snapshot.pageEntries.length, 1)));
+  }, [replaceAnnotations, replacePageEntries]);
+
+  const resetEditorState = useCallback((nextPageEntries: PageEntry[] = []) => {
     const empty: Annotation[] = [];
-    annotationsRef.current = empty;
-    historyRef.current = [empty];
+    const snapshot = { annotations: empty, pageEntries: nextPageEntries };
+    annotationsRef.current = snapshot.annotations;
+    pageEntriesRef.current = snapshot.pageEntries;
+    historyRef.current = [snapshot];
     historyIndexRef.current = 0;
-    setAnnotations(empty);
-    setSavedSnapshot(empty);
+    setAnnotations(snapshot.annotations);
+    setPageEntries(snapshot.pageEntries);
+    setSavedSnapshot(snapshot);
     setSelectedId(null);
     setEditingTextId(null);
     setActiveDrawingId(null);
@@ -526,46 +609,58 @@ export function PdfEditor() {
     setHistoryLength(1);
   }, []);
 
-  const commitAnnotations = useCallback((next: Annotation[]) => {
+  const commitEditorState = useCallback((nextAnnotations: Annotation[], nextPageEntries: PageEntry[]) => {
     const currentHistory = historyRef.current;
-    if (currentHistory[historyIndexRef.current] === next) {
-      replaceAnnotations(next);
+    const currentSnapshot = currentHistory[historyIndexRef.current];
+    if (
+      currentSnapshot.annotations === nextAnnotations &&
+      currentSnapshot.pageEntries === nextPageEntries
+    ) {
+      applySnapshot(currentSnapshot);
       return;
     }
 
-    let nextHistory = [...currentHistory.slice(0, historyIndexRef.current + 1), next];
+    const nextSnapshot = { annotations: nextAnnotations, pageEntries: nextPageEntries };
+    let nextHistory = [...currentHistory.slice(0, historyIndexRef.current + 1), nextSnapshot];
     if (nextHistory.length > MAX_HISTORY) nextHistory = nextHistory.slice(nextHistory.length - MAX_HISTORY);
     historyRef.current = nextHistory;
     historyIndexRef.current = nextHistory.length - 1;
-    replaceAnnotations(next);
+    applySnapshot(nextSnapshot);
     setHistoryCursor(historyIndexRef.current);
     setHistoryLength(nextHistory.length);
     setSaveMessage(null);
-  }, [replaceAnnotations]);
+  }, [applySnapshot]);
+
+  const commitAnnotations = useCallback((next: Annotation[]) => {
+    commitEditorState(next, pageEntriesRef.current);
+  }, [commitEditorState]);
 
   const undo = useCallback(() => {
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current -= 1;
-    replaceAnnotations(historyRef.current[historyIndexRef.current]);
+    applySnapshot(historyRef.current[historyIndexRef.current]);
     setHistoryCursor(historyIndexRef.current);
     setSelectedId(null);
+    setEditingTextId(null);
     setSaveMessage(null);
-  }, [replaceAnnotations]);
+  }, [applySnapshot]);
 
   const redo = useCallback(() => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
     historyIndexRef.current += 1;
-    replaceAnnotations(historyRef.current[historyIndexRef.current]);
+    applySnapshot(historyRef.current[historyIndexRef.current]);
     setHistoryCursor(historyIndexRef.current);
     setSelectedId(null);
+    setEditingTextId(null);
     setSaveMessage(null);
-  }, [replaceAnnotations]);
+  }, [applySnapshot]);
 
   const copySelected = useCallback(() => {
     const selected = annotationsRef.current.find((annotation) => annotation.id === selectedId);
     if (!selected) return;
     copiedAnnotationRef.current = cloneAnnotation(selected);
     setHasCopiedAnnotation(true);
+    void navigator.clipboard?.writeText(INTERNAL_ANNOTATION_CLIPBOARD_MARKER).catch(() => undefined);
   }, [selectedId]);
 
   const pasteCopied = useCallback((targetPageIndex: number) => {
@@ -628,9 +723,9 @@ export function PdfEditor() {
     setDocumentError(null);
     setEditorError(null);
     setPdfDocument(null);
-    setPageCount(0);
-    setPageDefinitions([]);
-    resetAnnotations();
+    setSourcePageDefinitions([]);
+    pageStageRefs.current.clear();
+    resetEditorState();
 
     void Promise.resolve().then(async () => {
       try {
@@ -656,10 +751,15 @@ export function PdfEditor() {
         const firstPage = await pdfDocument.getPage(1);
         const firstViewport = firstPage.getViewport({ scale: 1 });
         const firstDefinition = { pdfWidth: firstViewport.width, pdfHeight: firstViewport.height };
+        const initialPageEntries: PageEntry[] = Array.from({ length: pdfDocument.numPages }, (_, index) => ({
+          id: `source-${index}`,
+          kind: "source",
+          sourcePageIndex: index,
+        }));
         pdfDocumentRef.current = pdfDocument;
         setPdfDocument(pdfDocument);
-        setPageCount(pdfDocument.numPages);
-        setPageDefinitions(Array.from({ length: pdfDocument.numPages }, () => firstDefinition));
+        setSourcePageDefinitions(Array.from({ length: pdfDocument.numPages }, () => firstDefinition));
+        resetEditorState(initialPageEntries);
         setPageNumber(1);
         setDocumentReady(true);
       } catch (error) {
@@ -676,7 +776,7 @@ export function PdfEditor() {
       if (currentDocument) void currentDocument.destroy();
       else if (loadingTask) void loadingTask.destroy();
     };
-  }, [appLoading, params.id, resetAnnotations]);
+  }, [appLoading, params.id, resetEditorState]);
 
   const registerStage = useCallback((pageIndex: number, element: HTMLDivElement | null) => {
     if (element) pageStageRefs.current.set(pageIndex, element);
@@ -684,15 +784,17 @@ export function PdfEditor() {
   }, []);
 
   const updatePageDefinition = useCallback((pageIndex: number, definition: PageDefinition) => {
-    setPageDefinitions((current) => {
-      const previous = current[pageIndex];
+    const entry = pageEntriesRef.current[pageIndex];
+    if (!entry || entry.kind !== "source") return;
+    setSourcePageDefinitions((current) => {
+      const previous = current[entry.sourcePageIndex];
       if (
         previous &&
         Math.abs(previous.pdfWidth - definition.pdfWidth) < 0.01 &&
         Math.abs(previous.pdfHeight - definition.pdfHeight) < 0.01
       ) return current;
       const next = [...current];
-      next[pageIndex] = definition;
+      next[entry.sourcePageIndex] = definition;
       return next;
     });
   }, []);
@@ -926,11 +1028,6 @@ export function PdfEditor() {
         copySelected();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && copiedAnnotationRef.current) {
-        event.preventDefault();
-        pasteCopied(pageNumber - 1);
-        return;
-      }
       if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
         event.preventDefault();
         commitAnnotations(annotationsRef.current.filter((annotation) => annotation.id !== selectedId));
@@ -941,13 +1038,14 @@ export function PdfEditor() {
         setEditingTextId(null);
         setSaveMenuOpen(false);
         setZoomMenuOpen(false);
+        setPageInsertMenuOpen(false);
         setTool("select");
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commitAnnotations, copySelected, pageNumber, pasteCopied, redo, selectedId, undo]);
+  }, [commitAnnotations, copySelected, redo, selectedId, undo]);
 
   useEffect(() => {
     function preventAccidentalClose(event: BeforeUnloadEvent) {
@@ -976,6 +1074,15 @@ export function PdfEditor() {
     document.addEventListener("pointerdown", closeZoomMenu);
     return () => document.removeEventListener("pointerdown", closeZoomMenu);
   }, [zoomMenuOpen]);
+
+  useEffect(() => {
+    if (!pageInsertMenuOpen) return;
+    function closePageInsertMenu(event: PointerEvent) {
+      if (!pageInsertControlRef.current?.contains(event.target as Node)) setPageInsertMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", closePageInsertMenu);
+    return () => document.removeEventListener("pointerdown", closePageInsertMenu);
+  }, [pageInsertMenuOpen]);
 
   useEffect(() => {
     function handleInspectorResize(event: PointerEvent) {
@@ -1154,44 +1261,84 @@ export function PdfEditor() {
     };
   }
 
-  async function addImage(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (file.type !== "image/png" && file.type !== "image/jpeg") {
-      setEditorError("Escolha uma imagem PNG ou JPG.");
+  const addImageFile = useCallback(async (file: Blob, targetPageIndex: number) => {
+    if (!file.type.startsWith("image/") || !pageDefinitions.length) {
+      setEditorError("Escolha ou copie uma imagem válida.");
       return;
     }
-
+    const safePageIndex = clamp(targetPageIndex, 0, pageDefinitions.length - 1);
+    const definition = pageDefinitions[safePageIndex];
+    setEditorError(null);
     try {
-      const dataUrl = await fileAsDataUrl(file);
-      const dimensions = await imageDimensions(dataUrl);
+      const preparedImage = await normalizedImageData(file);
+      const { dataUrl, mimeType } = preparedImage;
+      const dimensions = preparedImage;
       const aspectRatio = dimensions.width / dimensions.height;
       let width = 0.38;
-      let height = (width * currentPageMetrics.pdfWidth) / (aspectRatio * currentPageMetrics.pdfHeight);
+      let height = (width * definition.pdfWidth) / (aspectRatio * definition.pdfHeight);
       if (height > 0.55) {
         height = 0.55;
-        width = (height * aspectRatio * currentPageMetrics.pdfHeight) / currentPageMetrics.pdfWidth;
+        width = (height * aspectRatio * definition.pdfHeight) / definition.pdfWidth;
       }
       const annotation: ImageAnnotation = {
         id: crypto.randomUUID(),
-        pageIndex: pageNumber - 1,
+        pageIndex: safePageIndex,
         type: "image",
         x: (1 - width) / 2,
         y: (1 - height) / 2,
         width,
         height,
         dataUrl,
-        mimeType: file.type as ImageAnnotation["mimeType"],
+        mimeType,
         aspectRatio,
       };
       commitAnnotations([...annotationsRef.current, annotation]);
       setSelectedId(annotation.id);
+      setPageNumber(safePageIndex + 1);
       setTool("select");
     } catch (error) {
       setEditorError(error instanceof Error ? error.message : "Não foi possível adicionar a imagem.");
     }
+  }, [commitAnnotations, pageDefinitions]);
+
+  function addImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void addImageFile(file, pageNumber - 1);
   }
+
+  useEffect(() => {
+    function handlePaste(event: ClipboardEvent) {
+      const clipboard = event.clipboardData;
+      if (!clipboard) return;
+      const internalAnnotation = clipboard.getData("text/plain") === INTERNAL_ANNOTATION_CLIPBOARD_MARKER;
+      if (internalAnnotation && copiedAnnotationRef.current) {
+        event.preventDefault();
+        pasteCopied(pageNumber - 1);
+        return;
+      }
+      const clipboardImage = Array.from(clipboard.items)
+        .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ?.getAsFile()
+        ?? Array.from(clipboard.files).find((file) => file.type.startsWith("image/"));
+
+      if (clipboardImage && editorReady) {
+        event.preventDefault();
+        void addImageFile(clipboardImage, pageNumber - 1);
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const editingField = target?.matches("input, textarea, select, [contenteditable='true']");
+      if (!editingField && copiedAnnotationRef.current) {
+        event.preventDefault();
+        pasteCopied(pageNumber - 1);
+      }
+    }
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [addImageFile, editorReady, pageNumber, pasteCopied]);
 
   function updateAnnotation(id: string, updater: (annotation: Annotation) => Annotation, commit = true) {
     const next = annotationsRef.current.map((annotation) => annotation.id === id ? updater(annotation) : annotation);
@@ -1217,10 +1364,79 @@ export function PdfEditor() {
     updateAnnotation(annotation.id, (current) => current.type === "image" ? { ...current, width, height } : current);
   }
 
+  function insertBlankPage(placement: BlankPagePlacement) {
+    const currentEntries = pageEntriesRef.current;
+    if (!currentEntries.length) return;
+    const currentIndex = clamp(pageNumber - 1, 0, currentEntries.length - 1);
+    const insertionIndex = placement === "start"
+      ? 0
+      : placement === "end"
+        ? currentEntries.length
+        : placement === "before"
+          ? currentIndex
+          : currentIndex + 1;
+    const referenceIndex = placement === "start"
+      ? 0
+      : placement === "end"
+        ? currentEntries.length - 1
+        : currentIndex;
+    const definition = pageDefinitions[referenceIndex] ?? DEFAULT_PAGE_DEFINITION;
+    const blankPage: BlankPageEntry = {
+      id: `blank-${crypto.randomUUID()}`,
+      kind: "blank",
+      definition: { ...definition },
+    };
+    const nextPageEntries = [
+      ...currentEntries.slice(0, insertionIndex),
+      blankPage,
+      ...currentEntries.slice(insertionIndex),
+    ];
+    const nextAnnotations = annotationsRef.current.map((annotation) => annotation.pageIndex >= insertionIndex
+      ? { ...annotation, pageIndex: annotation.pageIndex + 1 }
+      : annotation);
+
+    commitEditorState(nextAnnotations, nextPageEntries);
+    setSelectedId(null);
+    setEditingTextId(null);
+    setPageNumber(insertionIndex + 1);
+    setPageInsertMenuOpen(false);
+    setEditorError(null);
+    window.requestAnimationFrame(() => {
+      pageStageRefs.current.get(insertionIndex)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function removeCurrentBlankPage() {
+    const currentIndex = pageNumber - 1;
+    const currentEntries = pageEntriesRef.current;
+    const currentEntry = currentEntries[currentIndex];
+    if (!currentEntry || currentEntry.kind !== "blank") return;
+    const annotationsOnPage = annotationsRef.current.filter((annotation) => annotation.pageIndex === currentIndex);
+    if (
+      annotationsOnPage.length > 0 &&
+      !window.confirm("Remover esta página em branco e todas as edições adicionadas nela?")
+    ) return;
+
+    const nextPageEntries = currentEntries.filter((_, index) => index !== currentIndex);
+    const nextAnnotations = annotationsRef.current
+      .filter((annotation) => annotation.pageIndex !== currentIndex)
+      .map((annotation) => annotation.pageIndex > currentIndex
+        ? { ...annotation, pageIndex: annotation.pageIndex - 1 }
+        : annotation);
+    commitEditorState(nextAnnotations, nextPageEntries);
+    setSelectedId(null);
+    setEditingTextId(null);
+    setPageNumber(Math.min(currentIndex + 1, nextPageEntries.length));
+    setPageInsertMenuOpen(false);
+    setEditorError(null);
+  }
+
   async function savePdf(mode: SaveMode) {
     const currentMaterial = materialRef.current;
     const originalBytes = originalBytesRef.current;
-    if (!currentMaterial || !originalBytes || !annotationsRef.current.length || saving) return;
+    const currentPageEntries = pageEntriesRef.current;
+    const hasBlankPages = currentPageEntries.some((entry) => entry.kind === "blank");
+    if (!currentMaterial || !originalBytes || (!annotationsRef.current.length && !hasBlankPages) || saving) return;
 
     setSaving(true);
     setEditorError(null);
@@ -1229,6 +1445,11 @@ export function PdfEditor() {
     try {
       const { LineCapStyle, PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const pdfDocument = await PDFDocument.load(originalBytes.slice(0));
+      currentPageEntries.forEach((entry, index) => {
+        if (entry.kind === "blank") {
+          pdfDocument.insertPage(index, [entry.definition.pdfWidth, entry.definition.pdfHeight]);
+        }
+      });
       const standardFontNames = {
         helvetica: StandardFonts.Helvetica,
         "helvetica-bold": StandardFonts.HelveticaBold,
@@ -1362,7 +1583,10 @@ export function PdfEditor() {
       } else {
         await replaceMaterialFile(currentMaterial, outputFile);
       }
-      setSavedSnapshot(annotationsRef.current);
+      setSavedSnapshot({
+        annotations: annotationsRef.current,
+        pageEntries: pageEntriesRef.current,
+      });
       const successMessage = mode === "copy"
         ? `Nova cópia salva como “${outputName}”.`
         : "O arquivo original foi substituído pela versão editada.";
@@ -1662,7 +1886,7 @@ export function PdfEditor() {
             <button
               aria-expanded={saveMenuOpen}
               className={`primary-button pdf-save-button ${saving ? "is-loading" : ""}`}
-              disabled={!documentReady || !annotations.length || saving}
+              disabled={!documentReady || !hasPdfEdits || saving}
               onClick={() => setSaveMenuOpen((current) => !current)}
               type="button"
             >
@@ -1719,7 +1943,7 @@ export function PdfEditor() {
               if (inspectorAutoOpen) setInspectorOpen(true);
               imageInputRef.current?.click();
             }}
-            title="Adicionar imagem"
+            title="Adicionar imagem ou colar com Ctrl+V"
             type="button"
           >
             <ImagePlus size={16} /><span>Imagem</span>
@@ -1825,6 +2049,39 @@ export function PdfEditor() {
           <button className="icon-button" disabled={pageNumber >= pageCount} onClick={() => changePage(pageNumber + 1)} title="Próxima página" type="button">
             <ChevronRight size={18} />
           </button>
+          <div className="pdf-page-insert-control" ref={pageInsertControlRef}>
+            <button
+              aria-expanded={pageInsertMenuOpen}
+              className={`icon-button ${pageInsertMenuOpen ? "active" : ""}`}
+              disabled={!editorReady}
+              onClick={() => setPageInsertMenuOpen((current) => !current)}
+              title="Inserir página em branco"
+              type="button"
+            >
+              <FilePlus size={17} />
+            </button>
+            {pageInsertMenuOpen ? (
+              <div className="pdf-page-insert-menu" role="menu">
+                <button onClick={() => insertBlankPage("before")} role="menuitem" type="button">
+                  <FilePlus size={16} /><span>Antes da página {pageNumber}</span>
+                </button>
+                <button onClick={() => insertBlankPage("after")} role="menuitem" type="button">
+                  <FilePlus size={16} /><span>Depois da página {pageNumber}</span>
+                </button>
+                <button onClick={() => insertBlankPage("start")} role="menuitem" type="button">
+                  <FilePlus size={16} /><span>No início do PDF</span>
+                </button>
+                <button onClick={() => insertBlankPage("end")} role="menuitem" type="button">
+                  <FilePlus size={16} /><span>No final do PDF</span>
+                </button>
+                {currentPageEntry?.kind === "blank" ? (
+                  <button className="danger" onClick={removeCurrentBlankPage} role="menuitem" type="button">
+                    <FileMinus size={16} /><span>Remover esta página em branco</span>
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
           </div>
 
           <div className="pdf-toolbar-group pdf-zoom-tools" ref={zoomControlRef}>
@@ -1913,20 +2170,22 @@ export function PdfEditor() {
             </div>
           ) : pdfDocument ? (
             <div className={`pdf-pages-stack tool-${tool}`}>
-              {pageDefinitions.map((definition, pageIndex) => {
+              {pageEntries.map((entry, pageIndex) => {
+                const definition = pageDefinitions[pageIndex] ?? DEFAULT_PAGE_DEFINITION;
                 const metrics = metricsForPage(definition, zoom);
                 const pageAnnotations = annotations.filter((annotation) => annotation.pageIndex === pageIndex);
                 return (
                   <PdfPageSurface
                     current={pageNumber === pageIndex + 1}
                     definition={definition}
-                    key={pageIndex}
+                    key={entry.id}
                     onDefinition={updatePageDefinition}
                     onError={handlePageRenderError}
                     onPointerDown={handleStagePointerDown}
                     pageIndex={pageIndex}
                     pdfDocument={pdfDocument}
                     registerStage={registerStage}
+                    sourcePageIndex={entry.kind === "source" ? entry.sourcePageIndex : null}
                     zoom={zoom}
                   >
                     {pageAnnotations.map((annotation) => annotation.type === "draw"
@@ -2138,8 +2397,11 @@ export function PdfEditor() {
           ) : null}
 
           <div className="pdf-editor-status">
-            <span>{annotations.length} {annotations.length === 1 ? "edição" : "edições"}</span>
-            <span>{isDirty ? "Alterações não salvas" : annotations.length ? "Alterações salvas" : "Sem alterações"}</span>
+            <span>
+              {annotations.length} {annotations.length === 1 ? "edição" : "edições"}
+              {insertedPageCount ? ` · ${insertedPageCount} ${insertedPageCount === 1 ? "página adicionada" : "páginas adicionadas"}` : ""}
+            </span>
+            <span>{isDirty ? "Alterações não salvas" : hasPdfEdits ? "Alterações salvas" : "Sem alterações"}</span>
           </div>
           {saveMessage ? <p className="pdf-editor-message success-message">{saveMessage}</p> : null}
           {editorError ? <p className="pdf-editor-message error-message">{editorError}</p> : null}
@@ -2147,7 +2409,7 @@ export function PdfEditor() {
       </div>
 
       <input
-        accept="image/png,image/jpeg"
+        accept="image/*"
         className="visually-hidden"
         onChange={(event) => void addImage(event)}
         ref={imageInputRef}

@@ -4442,6 +4442,53 @@ label {
   height: 34px;
 }
 
+.pdf-page-insert-control {
+  position: relative;
+  height: 34px;
+}
+
+.pdf-page-insert-menu {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 7px);
+  left: 50%;
+  width: 238px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #151517;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+  display: grid;
+  transform: translateX(-50%);
+}
+
+.pdf-page-insert-menu button {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.pdf-page-insert-menu button:hover {
+  background: var(--surface-strong);
+}
+
+.pdf-page-insert-menu button.danger {
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 4px 4px;
+  color: #ff8b8b;
+}
+
 .pdf-page-field {
   min-width: 82px;
   display: flex;

@@ -8,7 +8,6 @@ import {
   Copy,
   Eraser,
   ExternalLink,
-  FileMinus,
   FilePlus,
   FileText,
   Highlighter,
@@ -131,8 +130,6 @@ type EditorSnapshot = {
   annotations: Annotation[];
   pageEntries: PageEntry[];
 };
-
-type BlankPagePlacement = "before" | "after" | "start" | "end";
 
 type Interaction = {
   kind: "move" | "resize" | "highlight" | "draw";
@@ -539,6 +536,7 @@ export function PdfEditor() {
   const [zoomDraft, setZoomDraft] = useState("100");
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
   const [pageInsertMenuOpen, setPageInsertMenuOpen] = useState(false);
+  const [pageInsertPositionDraft, setPageInsertPositionDraft] = useState("1");
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState<EditorSnapshot>(() => ({
     annotations: [],
@@ -567,10 +565,16 @@ export function PdfEditor() {
     : sourcePageDefinitions[entry.sourcePageIndex] ?? sourcePageDefinitions[0] ?? DEFAULT_PAGE_DEFINITION), [pageEntries, sourcePageDefinitions]);
   const pageCount = pageEntries.length;
   const selectedAnnotation = annotations.find((annotation) => annotation.id === selectedId) ?? null;
-  const insertedPageCount = pageEntries.filter((entry) => entry.kind === "blank").length;
+  const insertedPages = pageEntries.flatMap((entry, index) => entry.kind === "blank"
+    ? [{ entry, pageNumber: index + 1 }]
+    : []);
+  const insertedPageCount = insertedPages.length;
   const hasPdfEdits = annotations.length > 0 || insertedPageCount > 0;
   const isDirty = annotations !== savedSnapshot.annotations || pageEntries !== savedSnapshot.pageEntries;
-  const currentPageEntry = pageEntries[pageNumber - 1] ?? null;
+  const parsedPageInsertPosition = Number.parseInt(pageInsertPositionDraft, 10);
+  const validPageInsertPosition = Number.isFinite(parsedPageInsertPosition)
+    && parsedPageInsertPosition >= 1
+    && parsedPageInsertPosition <= pageCount + 1;
   const editorReady = documentReady && pageEntries.length > 0;
   const editorLayoutStyle = {
     "--pdf-inspector-width": `${inspectorWidth}px`,
@@ -1364,22 +1368,26 @@ export function PdfEditor() {
     updateAnnotation(annotation.id, (current) => current.type === "image" ? { ...current, width, height } : current);
   }
 
-  function insertBlankPage(placement: BlankPagePlacement) {
+  function togglePageInsertMenu() {
+    if (pageInsertMenuOpen) {
+      setPageInsertMenuOpen(false);
+      return;
+    }
+    setPageInsertPositionDraft(String(Math.min(pageNumber + 1, pageCount + 1)));
+    setPageInsertMenuOpen(true);
+  }
+
+  function normalizePageInsertPosition() {
+    const fallback = Math.min(pageNumber + 1, pageCount + 1);
+    const parsed = Number.parseInt(pageInsertPositionDraft, 10);
+    return clamp(Number.isFinite(parsed) ? parsed : fallback, 1, pageCount + 1);
+  }
+
+  function insertBlankPageAt(position: number) {
     const currentEntries = pageEntriesRef.current;
     if (!currentEntries.length) return;
-    const currentIndex = clamp(pageNumber - 1, 0, currentEntries.length - 1);
-    const insertionIndex = placement === "start"
-      ? 0
-      : placement === "end"
-        ? currentEntries.length
-        : placement === "before"
-          ? currentIndex
-          : currentIndex + 1;
-    const referenceIndex = placement === "start"
-      ? 0
-      : placement === "end"
-        ? currentEntries.length - 1
-        : currentIndex;
+    const insertionIndex = clamp(Math.round(position) - 1, 0, currentEntries.length);
+    const referenceIndex = clamp(insertionIndex > 0 ? insertionIndex - 1 : 0, 0, currentEntries.length - 1);
     const definition = pageDefinitions[referenceIndex] ?? DEFAULT_PAGE_DEFINITION;
     const blankPage: BlankPageEntry = {
       id: `blank-${crypto.randomUUID()}`,
@@ -1406,28 +1414,37 @@ export function PdfEditor() {
     });
   }
 
-  function removeCurrentBlankPage() {
-    const currentIndex = pageNumber - 1;
+  function removeBlankPage(pageIndex: number) {
     const currentEntries = pageEntriesRef.current;
-    const currentEntry = currentEntries[currentIndex];
+    const currentEntry = currentEntries[pageIndex];
     if (!currentEntry || currentEntry.kind !== "blank") return;
-    const annotationsOnPage = annotationsRef.current.filter((annotation) => annotation.pageIndex === currentIndex);
+    const annotationsOnPage = annotationsRef.current.filter((annotation) => annotation.pageIndex === pageIndex);
     if (
       annotationsOnPage.length > 0 &&
-      !window.confirm("Remover esta página em branco e todas as edições adicionadas nela?")
+      !window.confirm(`Remover a página em branco ${pageIndex + 1} e todas as edições adicionadas nela?`)
     ) return;
 
-    const nextPageEntries = currentEntries.filter((_, index) => index !== currentIndex);
+    const nextPageEntries = currentEntries.filter((_, index) => index !== pageIndex);
     const nextAnnotations = annotationsRef.current
-      .filter((annotation) => annotation.pageIndex !== currentIndex)
-      .map((annotation) => annotation.pageIndex > currentIndex
+      .filter((annotation) => annotation.pageIndex !== pageIndex)
+      .map((annotation) => annotation.pageIndex > pageIndex
         ? { ...annotation, pageIndex: annotation.pageIndex - 1 }
         : annotation);
+    const currentIndex = pageNumber - 1;
+    const nextPageNumber = currentIndex > pageIndex
+      ? pageNumber - 1
+      : currentIndex === pageIndex
+        ? Math.min(pageIndex + 1, nextPageEntries.length)
+        : pageNumber;
     commitEditorState(nextAnnotations, nextPageEntries);
     setSelectedId(null);
     setEditingTextId(null);
-    setPageNumber(Math.min(currentIndex + 1, nextPageEntries.length));
-    setPageInsertMenuOpen(false);
+    setPageNumber(nextPageNumber);
+    setPageInsertPositionDraft((current) => String(clamp(
+      Number.parseInt(current, 10) || 1,
+      1,
+      nextPageEntries.length + 1,
+    )));
     setEditorError(null);
   }
 
@@ -2054,30 +2071,77 @@ export function PdfEditor() {
               aria-expanded={pageInsertMenuOpen}
               className={`icon-button ${pageInsertMenuOpen ? "active" : ""}`}
               disabled={!editorReady}
-              onClick={() => setPageInsertMenuOpen((current) => !current)}
+              onClick={togglePageInsertMenu}
               title="Inserir página em branco"
               type="button"
             >
               <FilePlus size={17} />
             </button>
             {pageInsertMenuOpen ? (
-              <div className="pdf-page-insert-menu" role="menu">
-                <button onClick={() => insertBlankPage("before")} role="menuitem" type="button">
-                  <FilePlus size={16} /><span>Antes da página {pageNumber}</span>
+              <div aria-label="Inserir página em branco" className="pdf-page-insert-menu" role="dialog">
+                <label className="pdf-page-insert-field">
+                  <span>Posição da nova página</span>
+                  <div>
+                    <input
+                      aria-label="Posição da nova página"
+                      max={pageCount + 1}
+                      min={1}
+                      onBlur={() => setPageInsertPositionDraft(String(normalizePageInsertPosition()))}
+                      onChange={(event) => setPageInsertPositionDraft(event.target.value)}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && validPageInsertPosition) {
+                          event.preventDefault();
+                          insertBlankPageAt(parsedPageInsertPosition);
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setPageInsertMenuOpen(false);
+                        }
+                      }}
+                      type="number"
+                      value={pageInsertPositionDraft}
+                    />
+                    <small>/ {pageCount + 1}</small>
+                  </div>
+                </label>
+                <button
+                  className="pdf-page-insert-submit"
+                  disabled={!validPageInsertPosition}
+                  onClick={() => insertBlankPageAt(parsedPageInsertPosition)}
+                  type="button"
+                >
+                  <FilePlus size={16} /><span>Adicionar página</span>
                 </button>
-                <button onClick={() => insertBlankPage("after")} role="menuitem" type="button">
-                  <FilePlus size={16} /><span>Depois da página {pageNumber}</span>
-                </button>
-                <button onClick={() => insertBlankPage("start")} role="menuitem" type="button">
-                  <FilePlus size={16} /><span>No início do PDF</span>
-                </button>
-                <button onClick={() => insertBlankPage("end")} role="menuitem" type="button">
-                  <FilePlus size={16} /><span>No final do PDF</span>
-                </button>
-                {currentPageEntry?.kind === "blank" ? (
-                  <button className="danger" onClick={removeCurrentBlankPage} role="menuitem" type="button">
-                    <FileMinus size={16} /><span>Remover esta página em branco</span>
-                  </button>
+                {insertedPages.length ? (
+                  <div className="pdf-inserted-pages">
+                    <header><span>Páginas em branco</span><strong>{insertedPages.length}</strong></header>
+                    <div>
+                      {insertedPages.map(({ entry, pageNumber: blankPageNumber }) => (
+                        <div className="pdf-inserted-page-row" key={entry.id}>
+                          <button
+                            className="pdf-inserted-page-link"
+                            onClick={() => {
+                              setPageInsertMenuOpen(false);
+                              changePage(blankPageNumber);
+                            }}
+                            type="button"
+                          >
+                            Página {blankPageNumber}
+                          </button>
+                          <button
+                            aria-label={`Remover página em branco ${blankPageNumber}`}
+                            className="icon-button danger"
+                            onClick={() => removeBlankPage(blankPageNumber - 1)}
+                            title={`Remover página em branco ${blankPageNumber}`}
+                            type="button"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
               </div>
             ) : null}
